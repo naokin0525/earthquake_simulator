@@ -1,0 +1,176 @@
+/* src/index.css */
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+JP:wght@400;500;700&display=swap");
+
+:root {
+	--bg-dark: #0a0e17;
+	--panel-bg: rgba(15, 23, 42, 0.85);
+	--panel-border: rgba(255, 255, 255, 0.12);
+	--accent-cyan: #00f2fe;
+	--accent-blue: #4facfe;
+	--accent-crimson: #ff0844;
+	--accent-orange: #ffb199;
+	--font-family: "Inter", "Noto Sans JP", sans-serif;
+}
+
+* {
+	box-sizing: border-box;
+	margin: 0;
+	padding: 0;
+}
+
+html,
+body,
+#root {
+	width: 100%;
+	height: 100%;
+	overflow: hidden;
+	background-color: var(--bg-dark);
+	font-family: var(--font-family);
+	color: #f8fafc;
+	user-select: none;
+}
+
+/* Glassmorphism Panels */
+.glass-panel {
+	background: linear-gradient(135deg, rgba(15, 23, 42, 0.8), rgba(10, 15, 30, 0.6));
+	backdrop-filter: blur(20px) saturate(180%);
+	-webkit-backdrop-filter: blur(20px) saturate(180%);
+	border: 1px solid rgba(255, 255, 255, 0.1);
+	box-shadow: 0 12px 40px 0 rgba(0, 0, 0, 0.5), inset 0 0 0 1px rgba(255, 255, 255, 0.05);
+	border-radius: 16px;
+	transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.glass-panel:hover {
+	border-color: rgba(255, 255, 255, 0.2);
+	box-shadow: 0 16px 50px 0 rgba(0, 0, 0, 0.6), inset 0 0 0 1px rgba(255, 255, 255, 0.1);
+}
+
+/* Premium Buttons */
+.premium-btn {
+	position: relative;
+	overflow: hidden;
+	transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.premium-btn::after {
+	content: '';
+	position: absolute;
+	top: 0; left: -100%;
+	width: 100%; height: 100%;
+	background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+	transition: all 0.6s ease;
+}
+.premium-btn:hover::after {
+	left: 100%;
+}
+.premium-btn:active {
+	transform: scale(0.95);
+}
+
+/* Glowing text */
+.text-glow-cyan {
+	text-shadow: 0 0 12px rgba(34, 211, 238, 0.7);
+}
+.text-glow-rose {
+	text-shadow: 0 0 12px rgba(251, 113, 133, 0.7);
+}
+.text-glow-amber {
+	text-shadow: 0 0 12px rgba(251, 191, 36, 0.7);
+}
+.text-glow-emerald {
+	text-shadow: 0 0 12px rgba(52, 211, 153, 0.7);
+}
+
+/* EEW Flash Banner */
+@keyframes flash-eew {
+	0%,
+	100% {
+		background-color: rgba(220, 38, 38, 0.95);
+		box-shadow: 0 0 30px rgba(220, 38, 38, 0.8);
+	}
+	50% {
+		background-color: rgba(185, 28, 28, 0.95);
+		box-shadow: 0 0 10px rgba(185, 28, 28, 0.4);
+	}
+}
+
+.eew-flash-banner {
+	animation: flash-eew 1.2s infinite ease-in-out;
+}
+
+/* Pulsing Hypocenter Dot */
+@keyframes pulse-ring {
+	0% {
+		transform: scale(0.8);
+		opacity: 1;
+	}
+	100% {
+		transform: scale(2.4);
+		opacity: 0;
+	}
+}
+
+.pulse-circle {
+	animation: pulse-ring 1.5s cubic-bezier(0.215, 0.61, 0.355, 1) infinite;
+}
+
+/* JMA Intensity Badges */
+.jma-badge {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	font-weight: 700;
+	padding: 2px 8px;
+	border-radius: 6px;
+	color: #ffffff;
+	font-size: 0.85rem;
+	text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+}
+
+.jma-0 {
+	background-color: #ffffff;
+}
+.jma-1 {
+	background-color: #68c1f9;
+}
+.jma-2 {
+	background-color: #c6f4cd;
+}
+.jma-3 {
+	background-color: #fdef72;
+}
+.jma-4 {
+	background-color: #f6c344;
+	color: #111;
+	text-shadow: none;
+}
+.jma-5- {
+	background-color: #e89939;
+}
+.jma-5\+ {
+	background-color: #df742c;
+}
+.jma-6- {
+	background-color: #ea4225;
+}
+.jma-6\+ {
+	background-color: #971e27;
+}
+.jma-7 {
+	background-color: #b825f7;
+}
+.jma-unknown {
+	background-color: #000000;
+}
+
+/* Custom Scrollbars */
+::-webkit-scrollbar {
+	width: 6px;
+}
+::-webkit-scrollbar-track {
+	background: rgba(0, 0, 0, 0.2);
+}
+::-webkit-scrollbar-thumb {
+	background: rgba(255, 255, 255, 0.2);
+	border-radius: 3px;
+}
