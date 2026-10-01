@@ -5,13 +5,19 @@ scripts/generate_mesh_tiles.py
 Rasterizes J-SHIS 250m mesh amplification factor (ARV) data into Web Mercator (EPSG:3857)
 master GeoTIFF and slices it into standard XYZ raster tile pyramids (Z=5 to Z=10).
 
-RGB Encoding Scheme:
-  - R Channel (uint8, 0-255): Encodes Surface Amplification Factor (ARV).
-      Mapping formula: R_val = clamp(floor((ARV - 0.5) / (3.0 - 0.5) * 255.0), 0, 255)
-      ARV range [0.5, 3.0] maps linearly to [0, 255].
-  - G Channel (uint8, 0-255): Subducting plate depth / slab indicator (default 0).
-  - B Channel (uint8, 0-255): Deep sediment amplification or elevation (default 0).
-  - Alpha Channel (uint8, 0-255): 255 for land/mesh data pixels, 0 for ocean/nodata pixels.
+# RGB Encoding Scheme:
+#   - R Channel (uint8, 0-255): Encodes Surface Amplification Factor (ARV).
+#       Mapping formula: R_val = clamp(floor((ARV - 0.5) / (3.0 - 0.5) * 255.0), 0, 255)
+#       ARV range [0.5, 3.0] maps linearly to [0, 255].
+#   - G Channel (uint8, 0-255): Encodes Average Shear Wave Velocity in upper 30m (AVS).
+#       Mapping formula: G_val = clamp(floor((AVS - 100.0) / (1000.0 - 100.0) * 255.0), 0, 255)
+#       AVS range [100.0, 1000.0] maps linearly to [0, 255].
+#   - B Channel (uint8, 0-255): Reserved for future use or other geological indicators (default 0).
+#   - Alpha Channel (uint8, 0-255): 255 for land/mesh data pixels, 0 for ocean/nodata pixels.
+#
+# Note: Data based on Z-RULES (J-SHIS 250m mesh).
+# Columns: CODE (Mesh Code), JCODE (Prefectural Code), AVS (Vs30), ARV (Amp Factor)
+
 
 GLSL Shader Inverse Decompression Formula:
 ===========================================
@@ -101,11 +107,11 @@ def decode_jis_mesh_codes(mesh_codes, arv_values, plate_values=None, sediment_va
 
     # 500m offsets (v: 1-4)
     v_lat_off = np.where((v == 3) | (v == 4), 15.0 / 3600.0, 0.0)
-    v_lon_off = np.where((v == 2) | (v == 4), 15.0 / 3600.0, 0.0)
+    v_lon_off = np.where((v == 2) | (v == 4), 22.5 / 3600.0, 0.0)
 
     # 250m offsets (w: 1-4)
     w_lat_off = np.where((w == 3) | (w == 4), 7.5 / 3600.0, 0.0)
-    w_lon_off = np.where((w == 2) | (w == 4), 7.5 / 3600.0, 0.0)
+    w_lon_off = np.where((w == 2) | (w == 4), 11.25 / 3600.0, 0.0)
 
     lat_min = lat_base + lat_2nd + lat_3rd + np.where(is_10digit, v_lat_off + w_lat_off, 0.0)
     lon_min = lon_base + lon_2nd + lon_3rd + np.where(is_10digit, v_lon_off + w_lon_off, 0.0)
@@ -115,6 +121,11 @@ def decode_jis_mesh_codes(mesh_codes, arv_values, plate_values=None, sediment_va
     lon_center = lon_min + np.where(is_10digit, 5.625 / 3600.0, 22.5 / 3600.0)
 
     return lat_center, lon_center, arv
+
+def encode_avs_to_g(avs):
+    """Encodes AVS [100.0, 1000.0] to uint8 [0, 255]."""
+    norm = np.clip((avs - 100.0) / 900.0, 0.0, 1.0)
+    return np.floor(norm * 255.0).astype(np.uint8)
 
 def encode_arv_to_r(arv):
     """Encodes ARV factor [0.5, 3.0] to uint8 [0, 255]."""
@@ -189,12 +200,37 @@ def generate_tiles_fast(lat, lon, r_channel, g_channel, b_channel, min_zoom=5, m
 
                 # Create RGBA tile buffer
                 rgba_tile = np.zeros((tile_pixel_res, tile_pixel_res, 4), dtype=np.uint8)
-                
-                # Assign channels
-                rgba_tile[py, px, 0] = r_channel[mask]
-                rgba_tile[py, px, 1] = g_channel[mask]
-                rgba_tile[py, px, 2] = b_channel[mask]
-                rgba_tile[py, px, 3] = 255  # Alpha land mask
+
+                # Use mesh-aware filling to avoid gaps between cells (rasterize as blocks)
+                HALF_LAT = (7.5 / 3600.0) / 2.0
+                HALF_LON = (11.25 / 3600.0) / 2.0
+
+                m_lat_min = lat[mask] - HALF_LAT
+                m_lat_max = lat[mask] + HALF_LAT
+                m_lon_min = lon[mask] - HALF_LON
+                m_lon_max = lon[mask] + HALF_LON
+
+                # Convert bounds to Mercator
+                m_xmin = lon_to_mercator_x(m_lon_min)
+                m_xmax = lon_to_mercator_x(m_lon_max)
+                m_ymin = lat_to_mercator_y(m_lat_min)
+                m_ymax = lat_to_mercator_y(m_lat_max)
+
+                # Calculate pixel boundaries within the 256x256 tile
+                px0 = np.clip(np.floor((m_xmin - xmin) / (xmax - xmin) * tile_pixel_res).astype(int), 0, 255)
+                px1 = np.clip(np.ceil((m_xmax - xmin) / (xmax - xmin) * tile_pixel_res).astype(int), 0, 255)
+                py0 = np.clip(np.floor((ymax - m_ymax) / (ymax - ymin) * tile_pixel_res).astype(int), 0, 255)
+                py1 = np.clip(np.ceil((ymax - m_ymin) / (ymax - ymin) * tile_pixel_res).astype(int), 0, 255)
+
+                r_sub = r_channel[mask]
+                g_sub = g_channel[mask]
+                b_sub = b_channel[mask]
+
+                for i in range(len(r_sub)):
+                    rgba_tile[py0[i]:py1[i] + 1, px0[i]:px1[i] + 1, 0] = r_sub[i]
+                    rgba_tile[py0[i]:py1[i] + 1, px0[i]:px1[i] + 1, 1] = g_sub[i]
+                    rgba_tile[py0[i]:py1[i] + 1, px0[i]:px1[i] + 1, 2] = b_sub[i]
+                    rgba_tile[py0[i]:py1[i] + 1, px0[i]:px1[i] + 1, 3] = 255
 
                 # Save PNG
                 z_dir = os.path.join(output_dir, str(zoom), str(xtile))
@@ -251,6 +287,7 @@ def process_mesh_csv(input_csv: str, output_dir: str, min_zoom: int, max_zoom: i
     col_lat = next((c for c in df.columns if c in ["LAT", "LATITUDE"]), None)
     col_lon = next((c for c in df.columns if c in ["LON", "LONGTITUDE", "LONGITUDE"]), None)
     col_arv = next((c for c in df.columns if c in ["ARV", "AMP_FACTOR", "AMP"]), None)
+    col_avs = next((c for c in df.columns if c in ["AVS", "VS30"]), None)
     col_g = next((c for c in df.columns if c in ["PLATE_DEPTH", "SLAB", "G"]), None)
     col_b = next((c for c in df.columns if c in ["SEDIMENT", "ELEVATION", "B"]), None)
 
@@ -279,10 +316,16 @@ def process_mesh_csv(input_csv: str, output_dir: str, min_zoom: int, max_zoom: i
 
     # Encode R channel (ARV factor)
     r_channel = encode_arv_to_r(arv)
-    
-    # Encode G & B channels
-    g_channel = (df_valid[col_g].values * 255.0).astype(np.uint8) if col_g else np.zeros_like(r_channel)
-    b_channel = (df_valid[col_b].values * 255.0).astype(np.uint8) if col_b else np.zeros_like(r_channel)
+
+    # Encode G channel (AVS value)
+    if col_avs is not None:
+        avs_vals = df_valid[col_avs].astype(np.float32).values
+        g_channel = encode_avs_to_g(avs_vals)
+    else:
+        g_channel = np.zeros_like(r_channel)
+
+    # Encode B channel (unused/reserved)
+    b_channel = np.zeros_like(r_channel)
 
     print("[INFO] Starting fast raster tile pyramid generation...")
     generate_tiles_fast(lat, lon, r_channel, g_channel, b_channel, min_zoom=min_zoom, max_zoom=max_zoom, output_dir=output_dir)

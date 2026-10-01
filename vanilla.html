@@ -59,6 +59,53 @@
       pointer-events: auto;
     }
 
+    .timeline-panel {
+      position: absolute;
+      top: 20px;
+      right: 20px;
+      width: 280px;
+      padding: 18px;
+    }
+
+    .timeline-step {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 13px;
+      color: #64748b;
+      margin-bottom: 10px;
+      transition: all 0.3s;
+    }
+
+    .step-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: #334155;
+      flex-shrink: 0;
+      transition: all 0.3s;
+    }
+
+    .timeline-step.active {
+      color: var(--accent-cyan);
+      text-shadow: 0 0 8px rgba(0, 242, 254, 0.5);
+      font-weight: bold;
+    }
+
+    .timeline-step.active .step-dot {
+      background: var(--accent-cyan);
+      box-shadow: 0 0 10px var(--accent-cyan);
+      transform: scale(1.2);
+    }
+
+    .timeline-step.completed {
+      color: #cbd5e1;
+    }
+
+    .timeline-step.completed .step-dot {
+      background: #10b981;
+    }
+
     .hud {
       position: absolute;
       top: 20px;
@@ -176,6 +223,20 @@
       </div>
     </div>
 
+    <div class="glass-panel timeline-panel">
+      <h3 style="margin-top:0; color:var(--accent-cyan); margin-bottom: 12px; font-size: 14px;">JMA Event Flow</h3>
+      <div id="jma-timeline">
+        <div class="timeline-step" id="step-0"><div class="step-dot"></div><span>1. 地震発生</span></div>
+        <div class="timeline-step" id="step-1"><div class="step-dot"></div><span>2. 揺れの検知</span></div>
+        <div class="timeline-step" id="step-2"><div class="step-dot"></div><span>3. 緊急地震速報 (予報)</span></div>
+        <div class="timeline-step" id="step-3"><div class="step-dot"></div><span>4. 緊急地震速報 (警報)</span></div>
+        <div class="timeline-step" id="step-4"><div class="step-dot"></div><span>5. 震度速報</span></div>
+        <div class="timeline-step" id="step-5"><div class="step-dot"></div><span>6. 地震情報</span></div>
+        <div class="timeline-step" id="step-6"><div class="step-dot"></div><span>7. 長周期地震動情報</span></div>
+        <div class="timeline-step" id="step-7"><div class="step-dot"></div><span>8. 推定震度分布図</span></div>
+      </div>
+    </div>
+
     <div class="glass-panel controls">
       <div class="flex-between"><span>震源の深さ</span><strong id="depth-val" class="text-cyan">10 km</strong></div>
       <input type="range" id="depth" min="0" max="800" step="1" value="10">
@@ -192,9 +253,10 @@
 
   <script type="module">
     import { SimulationEngine } from './src/core/simulation/SimulationEngine.js';
-    import { EEWEngine } from './src/core/eew/EEWEngine.js';
+    import { EEWEngine, PREFECTURE_CENTROIDS } from './src/core/eew/EEWEngine.js';
     import { StationState } from './src/core/types.js';
     import { calculateJmaIntensity } from './src/core/physics/attenuation.js';
+    import { ArvResolver } from './src/core/physics/arvResolver.js';
 
     const JMA_COLORS = [
       { s: '0', c: '#ffffff', rgb: [255, 255, 255], t: '#000' },
@@ -276,6 +338,30 @@
           stations.lats[i] = 31.0 + Math.random() * 13.5;
           stations.lons[i] = 130.0 + Math.random() * 14.5;
           stations.ampFactors[i] = 0.8 + Math.random() * 0.8;
+        }
+      }
+
+      // Integrate ARV Tiles for stations
+      for (let i = 0; i < stations.totalStations; i++) {
+        try {
+          const { x, y, px, py } = ArvResolver.getTileCoordinates(stations.lats[i], stations.lons[i], 10);
+          const tileUrl = `./tiles/mesh/${10}/${x}/${y}.png`;
+          const sampledArv = await ArvResolver.sampleArvFromTile(tileUrl, px, py);
+          stations.ampFactors[i] = sampledArv;
+        } catch (e) {
+          // Fallback to binary data ampFactor if tile loading fails
+        }
+      }
+
+      // Integrate ARV Tiles for prefecture centroids
+      for (const [code, pref] of Object.entries(PREFECTURE_CENTROIDS)) {
+        try {
+          const { x, y, px, py } = ArvResolver.getTileCoordinates(pref.lat, pref.lon, 10);
+          const tileUrl = `./tiles/mesh/${10}/${x}/${y}.png`;
+          const sampledArv = await ArvResolver.sampleArvFromTile(tileUrl, px, py);
+          eewEngine.setPrefectureArv(code, sampledArv);
+        } catch (e) {
+          // Fallback to pref.defaultArv in EEWEngine
         }
       }
 
@@ -448,13 +534,50 @@
       document.getElementById('sim-time').innerText = engine.getSimTime().toFixed(1) + ' s';
       document.getElementById('p-count').innerText = p;
       document.getElementById('s-count').innerText = s;
+      updateTimeline(p, s);
+    }
+
+    function updateTimeline(p, s) {
+      const config = engine.getConfig();
+      const mag = config ? config.hypocenter.magnitude : 0;
+      const report = eewEngine.latestReport;
+      const isFinal = report?.isFinal || false;
+
+      const steps = [
+        { id: 'step-0', active: isPlaying },
+        { id: 'step-1', active: p > 0 },
+        { id: 'step-2', active: eewEngine.reportCount >= 1 },
+        { id: 'step-3', active: eewEngine.isWarningIssued || report?.type === 'WARNING' },
+        { id: 'step-4', active: s > 0 },
+        { id: 'step-5', active: isFinal },
+        { id: 'step-6', active: isFinal && mag >= 7.0 },
+        { id: 'step-7', active: isFinal },
+      ];
+
+      let currentActiveIndex = -1;
+      for (let i = 0; i < steps.length; i++) {
+        if (steps[i].active) {
+          currentActiveIndex = i;
+        }
+      }
+
+      for (let i = 0; i < steps.length; i++) {
+        const el = document.getElementById(steps[i].id);
+        if (!el) continue;
+
+        el.classList.remove('active', 'completed');
+        if (i < currentActiveIndex) {
+          el.classList.add('completed');
+        } else if (i === currentActiveIndex) {
+          el.classList.add('active');
+        }
+      }
     }
 
     function updateEEWBanner(report) {
       const banner = document.getElementById('eew-banner');
       banner.style.display = 'block';
 
-      // Styling based on type
       if (report.type === 'WARNING') {
         banner.style.background = 'rgba(220, 38, 38, 0.6)';
         banner.style.borderColor = 'rgba(255, 0, 0, 1)';
@@ -547,8 +670,11 @@
       }
     };
 
-    loadData();
-    requestAnimationFrame(tick);
+    async function start() {
+      await loadData();
+      requestAnimationFrame(tick);
+    }
+    start();
   </script>
 </body>
 

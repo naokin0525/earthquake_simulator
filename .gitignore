@@ -25,5 +25,5 @@ Thumbs.db
 # Simulation Data (Large binary files)
 # If these should be in Git, remove these lines
 public/data/stations/stations.bin
-data_references/*.zip
-data_references/*.csv
+data_references/*
+public/*

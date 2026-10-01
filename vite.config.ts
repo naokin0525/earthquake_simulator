@@ -8,5 +8,14 @@ export default defineConfig({
     globals: true,
     environment: 'node',
     include: ['tests/**/*.test.ts']
+  },
+  build: {
+    outDir: 'build',
+    rollupOptions: {
+      onwarn(warning, warn) {
+        if (warning.code === 'INVALID_ANNOTATION') return;
+        warn(warning);
+      },
+    },
   }
 });

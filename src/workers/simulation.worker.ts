@@ -61,7 +61,8 @@ function startTickLoop(): void {
     // Sequence JMA Events and Milestones
     const seqResult = eventSequencer.update(
       tickState.simTime,
-      simulationEngine.getStationStates().filter(s => s !== 0).length,
+      simulationEngine.getStationStates().filter((s: number) => s !== 0).length,
+
       tickState.currentEEWReport,
       simulationEngine?.getConfig()?.hypocenter
     );
