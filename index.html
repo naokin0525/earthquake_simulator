@@ -1,13 +1,689 @@
 <!DOCTYPE html>
-<html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Earthquake Simulator</title>
-  </head>
-  <body>
-    <div id="root"></div>
-    <script type="module" src="/src/main.tsx"></script>
-  </body>
+<html lang="ja">
+
+<head>
+  <meta charset="UTF-8">
+  <title>Earthquake Simulator</title>
+  <script src="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.js"></script>
+  <link href="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.css" rel="stylesheet" />
+  <script src="https://unpkg.com/deck.gl@8.9.32/dist.min.js"></script>
+  <style>
+    :root {
+      --bg-dark: #00355f;
+      --accent-cyan: #00f2fe;
+      --accent-pwave: #00cfff;
+      --accent-swave: #ff4400;
+      --accent-rose: #ff0844;
+      --accent-amber: #fbbf24;
+      font-family: 'Inter', 'Noto Sans JP', sans-serif;
+    }
+
+    body,
+    html {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: var(--bg-dark);
+      color: white;
+      user-select: none;
+    }
+
+    #map-container {
+      position: absolute;
+      inset: 0;
+      z-index: 0;
+    }
+
+    #deck-canvas {
+      position: absolute;
+      inset: 0;
+      z-index: 1;
+      pointer-events: auto;
+    }
+
+    #ui-layer {
+      position: absolute;
+      inset: 0;
+      z-index: 10;
+      pointer-events: none;
+    }
+
+    .glass-panel {
+      background: linear-gradient(135deg, rgba(15, 23, 42, 0.85), rgba(10, 15, 30, 0.7));
+      backdrop-filter: blur(20px) saturate(180%);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      box-shadow: 0 12px 40px 0 rgba(0, 0, 0, 0.6);
+      border-radius: 16px;
+      pointer-events: auto;
+    }
+
+    .timeline-panel {
+      position: absolute;
+      top: 20px;
+      right: 20px;
+      width: 280px;
+      padding: 18px;
+    }
+
+    .timeline-step {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 13px;
+      color: #64748b;
+      margin-bottom: 10px;
+      transition: all 0.3s;
+    }
+
+    .step-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: #334155;
+      flex-shrink: 0;
+      transition: all 0.3s;
+    }
+
+    .timeline-step.active {
+      color: var(--accent-cyan);
+      text-shadow: 0 0 8px rgba(0, 242, 254, 0.5);
+      font-weight: bold;
+    }
+
+    .timeline-step.active .step-dot {
+      background: var(--accent-cyan);
+      box-shadow: 0 0 10px var(--accent-cyan);
+      transform: scale(1.2);
+    }
+
+    .timeline-step.completed {
+      color: #cbd5e1;
+    }
+
+    .timeline-step.completed .step-dot {
+      background: #10b981;
+    }
+
+    .hud {
+      position: absolute;
+      top: 20px;
+      left: 20px;
+      width: 320px;
+      padding: 18px;
+    }
+
+    .controls {
+      position: absolute;
+      bottom: 20px;
+      right: 20px;
+      width: 300px;
+      padding: 18px;
+    }
+
+    .legend {
+      position: absolute;
+      bottom: 20px;
+      left: 20px;
+      padding: 10px 14px;
+      display: flex;
+      gap: 5px;
+      align-items: center;
+    }
+
+    .btn {
+      background: linear-gradient(90deg, #00cfff, #0077ff);
+      color: white;
+      border: none;
+      padding: 10px 16px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-weight: bold;
+      width: 100%;
+      transition: all 0.2s;
+    }
+
+    .btn:active {
+      transform: scale(0.96);
+    }
+
+    .btn-stop {
+      background: linear-gradient(90deg, #f39c12, #e74c3c);
+      color: white;
+    }
+
+    .flex-between {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 8px;
+      align-items: center;
+      font-size: 14px;
+    }
+
+    .text-cyan {
+      color: var(--accent-cyan);
+      text-shadow: 0 0 8px rgba(0, 242, 254, 0.6);
+      font-family: monospace;
+      font-size: 16px;
+    }
+
+    .text-pwave {
+      color: var(--accent-pwave);
+      text-shadow: 0 0 8px rgba(0, 207, 255, 0.6);
+      font-family: monospace;
+      font-size: 16px;
+    }
+
+    .text-swave {
+      color: var(--accent-swave);
+      text-shadow: 0 0 8px rgba(255, 68, 0, 0.6);
+      font-family: monospace;
+      font-size: 16px;
+    }
+
+    .jma-box {
+      width: 22px;
+      height: 22px;
+      border-radius: 4px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 10px;
+      font-weight: bold;
+      text-shadow: 0 1px 2px rgba(0, 0, 0, 0.7);
+    }
+
+    input[type=range] {
+      width: 100%;
+      margin-bottom: 14px;
+      accent-color: var(--accent-cyan);
+      cursor: pointer;
+    }
+  </style>
+</head>
+
+<body>
+  <div id="map-container"></div>
+  <canvas id="deck-canvas"></canvas>
+  <div id="ui-layer">
+    <div class="glass-panel hud">
+      <h3 style="margin-top:0; color:var(--accent-cyan); margin-bottom: 6px;">Earthquake Simulator</h3>
+      <p style="font-size: 12px; color: #94a3b8; margin-top: 0; margin-bottom: 14px;">地図上をクリックして震源地を設定してください</p>
+      <div class="flex-between"><span style="color:#cbd5e1">経過時間 (Elapsed)</span><strong id="sim-time"
+          class="text-cyan">0.0 s</strong></div>
+      <div class="flex-between"><span style="color:#cbd5e1">P波検知地点 (P-Wave)</span><strong id="p-count"
+          class="text-pwave">0</strong></div>
+      <div class="flex-between"><span style="color:#cbd5e1">主要動到達地点 (S-Wave)</span><strong id="s-count"
+          class="text-swave">0</strong></div>
+      <hr style="border-color: rgba(255,255,255,0.1); margin: 12px 0;">
+      <div id="eew-banner"
+        style="display:none; color: #fff; font-weight: bold; background: rgba(220,38,38,0.3); padding: 8px; border-radius: 8px; border: 1px solid rgba(220,38,38,0.7); text-align: center; font-size: 13px;">
+        EEW 緊急地震速報 (予報/警報)
+      </div>
+    </div>
+
+    <div class="glass-panel timeline-panel">
+      <h3 style="margin-top:0; color:var(--accent-cyan); margin-bottom: 12px; font-size: 14px;">JMA Event Flow</h3>
+      <div id="jma-timeline">
+        <div class="timeline-step" id="step-0"><div class="step-dot"></div><span>1. 地震発生</span></div>
+        <div class="timeline-step" id="step-1"><div class="step-dot"></div><span>2. 揺れの検知 (P波検知)</span></div>
+        <div class="timeline-step" id="step-2"><div class="step-dot"></div><span>3. 緊急地震速報 (予報): M3.5以上、または推定最大震度3以上などで発行</span></div>
+        <div class="timeline-step" id="step-3"><div class="step-dot"></div><span>4. 緊急地震速報 (警報): 2点以上の観測点検知かつ最大震度5弱以上などで発行</span></div>
+        <div class="timeline-step" id="step-4"><div class="step-dot"></div><span>5. 主要動到達 (S波検知)</span></div>
+        <div class="timeline-step" id="step-5"><div class="step-dot"></div><span>6. 震度速報</span></div>
+        <div class="timeline-step" id="step-6"><div class="step-dot"></div><span>7. 地震情報 (M7.0以上で長周期地震動情報を含む)</span></div>
+        <div class="timeline-step" id="step-7"><div class="step-dot"></div><span>8. 推定震度分布図</span></div>
+      </div>
+    </div>
+
+    <div class="glass-panel controls">
+      <div class="flex-between"><span>震源の深さ</span><strong id="depth-val" class="text-cyan">10 km</strong></div>
+      <input type="range" id="depth" min="0" max="800" step="1" value="10">
+      <div class="flex-between"><span>マグニチュード</span><strong id="mag-val" class="text-swave">7.0</strong></div>
+      <input type="range" id="mag" min="0.1" max="13.0" step="0.1" value="7.0">
+      <button id="play-btn" class="btn">シミュレーション開始</button>
+      <button id="reset-btn" class="btn btn-stop" style="margin-top: 8px;">リセット</button>
+    </div>
+
+    <div class="glass-panel legend" id="legend-container">
+      <span style="font-size: 12px; margin-right: 6px; color: #cbd5e1;">震度</span>
+    </div>
+  </div>
+
+  <script type="module">
+    import { SimulationEngine } from './src/core/simulation/SimulationEngine.js';
+    import { EEWEngine, PREFECTURE_CENTROIDS } from './src/core/eew/EEWEngine.js';
+    import { StationState } from './src/core/types.js';
+    import { calculateJmaIntensity } from './src/core/physics/attenuation.js';
+    import { ArvResolver } from './src/core/physics/arvResolver.js';
+
+    const JMA_COLORS = [
+      { s: '0', c: '#ffffff', rgb: [255, 255, 255], t: '#000' },
+      { s: '1', c: '#68C1F9', rgb: [104, 193, 249], t: '#000' },
+      { s: '2', c: '#C6F4CD', rgb: [198, 244, 205], t: '#000' },
+      { s: '3', c: '#FDEF72', rgb: [253, 239, 114], t: '#000' },
+      { s: '4', c: '#F6C344', rgb: [246, 195, 68], t: '#000' },
+      { s: '5-', c: '#E89939', rgb: [232, 153, 57], t: '#fff' },
+      { s: '5+', c: '#DF742C', rgb: [223, 116, 44], t: '#fff' },
+      { s: '6-', c: '#EA4225', rgb: [234, 66, 37], t: '#fff' },
+      { s: '6+', c: '#971E27', rgb: [151, 30, 39], t: '#fff' },
+      { s: '7', c: '#B825F7', rgb: [184, 37, 247], t: '#fff' }
+    ];
+
+    const JMA_SCALE_MAP = {
+      '0': 0, '1': 1, '2': 2, '3': 3, '4': 4, '5-': 5, '5+': 6, '6-': 7, '6+': 8, '7': 9
+    };
+
+    const legContainer = document.getElementById('legend-container');
+    JMA_COLORS.forEach(j => {
+      const b = document.createElement('div');
+      b.className = 'jma-box';
+      b.style.backgroundColor = j.c;
+      b.style.color = j.t;
+      b.innerText = j.s;
+      legContainer.appendChild(b);
+    });
+
+    const map = new maplibregl.Map({
+      container: 'map-container',
+      style: {
+        version: 8,
+        sources: {},
+        layers: [{
+          id: 'background',
+          type: 'background',
+          paint: { 'background-color': '#0a0e17' }
+        }]
+      },
+      center: [138.2, 36.5],
+      zoom: 5.4,
+      interactive: false
+    });
+
+    let stations = null;
+    let engine = null;
+    let eewEngine = new EEWEngine();
+    let isPlaying = false;
+    let lastTick = 0;
+    let deckgl = null;
+
+    async function loadData() {
+      try {
+        const bin = await fetch('./public/data/stations/stations.bin').then(r => r.arrayBuffer());
+        const dv = new DataView(bin);
+        const total = dv.getUint32(0, true);
+        stations = {
+          lats: new Float32Array(total),
+          lons: new Float32Array(total),
+          ampFactors: new Float32Array(total),
+          totalStations: total
+        };
+        for (let i = 0; i < total; i++) {
+          const off = 4 + i * 16;
+          stations.lats[i] = dv.getFloat32(off, true);
+          stations.lons[i] = dv.getFloat32(off + 4, true);
+          stations.ampFactors[i] = dv.getFloat32(off + 8, true);
+        }
+      } catch (e) {
+        console.warn("ローカルデータ未検出のため、モック観測点を生成します。");
+        const total = 900;
+        stations = {
+          lats: new Float32Array(total),
+          lons: new Float32Array(total),
+          ampFactors: new Float32Array(total),
+          totalStations: total
+        };
+        for (let i = 0; i < total; i++) {
+          stations.lats[i] = 31.0 + Math.random() * 13.5;
+          stations.lons[i] = 130.0 + Math.random() * 14.5;
+          stations.ampFactors[i] = 0.8 + Math.random() * 0.8;
+        }
+      }
+
+      // Integrate ARV Tiles for stations
+      for (let i = 0; i < stations.totalStations; i++) {
+        try {
+          const { x, y, px, py } = ArvResolver.getTileCoordinates(stations.lats[i], stations.lons[i], 10);
+          const tileUrl = `./tiles/mesh/${10}/${x}/${y}.png`;
+          const sampledArv = await ArvResolver.sampleArvFromTile(tileUrl, px, py);
+          stations.ampFactors[i] = sampledArv;
+        } catch (e) {
+          // Fallback to binary data ampFactor if tile loading fails
+        }
+      }
+
+      // Integrate ARV Tiles for prefecture centroids
+      for (const [code, pref] of Object.entries(PREFECTURE_CENTROIDS)) {
+        try {
+          const { x, y, px, py } = ArvResolver.getTileCoordinates(pref.lat, pref.lon, 10);
+          const tileUrl = `./tiles/mesh/${10}/${x}/${y}.png`;
+          const sampledArv = await ArvResolver.sampleArvFromTile(tileUrl, px, py);
+          eewEngine.setPrefectureArv(code, sampledArv);
+        } catch (e) {
+          // Fallback to pref.defaultArv in EEWEngine
+        }
+      }
+
+      engine = new SimulationEngine(stations);
+      initDeck();
+    }
+
+    const { Deck, ScatterplotLayer, GeoJsonLayer } = deck;
+
+    function initDeck() {
+      deckgl = new Deck({
+        canvas: 'deck-canvas',
+        width: '100%',
+        height: '100%',
+        initialViewState: {
+          longitude: 138.2,
+          latitude: 36.5,
+          zoom: 5.4,
+          pitch: 0,
+          bearing: 0
+        },
+        controller: true,
+        onClick: (info) => {
+          if (info.coordinate) {
+            const config = {
+              hypocenter: {
+                lon: info.coordinate[0],
+                lat: info.coordinate[1],
+                depth: parseFloat(document.getElementById('depth').value),
+                magnitude: parseFloat(document.getElementById('mag').value),
+                originTime: 0
+              },
+              timeScale: 3.5,
+              noiseStdDev: 0.1
+            };
+            engine.init(config);
+            eewEngine.reset();
+            document.getElementById('eew-banner').style.display = 'none';
+            renderLayers();
+          }
+        },
+        layers: []
+      });
+      renderLayers();
+    }
+
+    function renderLayers() {
+      if (!deckgl) return;
+      const layers = [
+        new GeoJsonLayer({
+          id: 'japan-landmass',
+          data: './public/data/prefectures.geojson',
+          filled: true,
+          getFillColor: d => {
+            const report = eewEngine.latestReport;
+            if (report && report.type === 'WARNING') {
+              // In a real app, we would check if the prefecture is in the warning area.
+              // For this simulator, we color the whole map red to indicate a public alert.
+              return [220, 38, 38, 100];
+            }
+            return [20, 30, 48, 255];
+          },
+          getLineColor: [60, 90, 130, 180],
+          lineWidthMinPixels: 1.2,
+        })
+      ];
+
+      const config = engine.getConfig();
+      const simTime = engine.getSimTime();
+
+      if (config) {
+        const hypo = config.hypocenter;
+        const pRadiusMeters = Math.max(0, Math.sqrt(Math.max(0, Math.pow(simTime * 6.0, 2) - Math.pow(hypo.depth, 2)))) * 1000;
+        const sRadiusMeters = Math.max(0, Math.sqrt(Math.max(0, Math.pow(simTime * 3.5, 2) - Math.pow(hypo.depth, 2)))) * 1000;
+
+        if (pRadiusMeters > 0) {
+          layers.push(new ScatterplotLayer({
+            id: 'p-wave',
+            data: [hypo],
+            getPosition: d => [d.lon, d.lat],
+            radiusUnits: 'meters',
+            getRadius: pRadiusMeters,
+            getFillColor: [0, 207, 255, 20],
+            getLineColor: [0, 207, 255, 230],
+            getLineWidth: 3,
+            stroked: true,
+            filled: true
+          }));
+        }
+
+        if (sRadiusMeters > 0) {
+          layers.push(new ScatterplotLayer({
+            id: 's-wave',
+            data: [hypo],
+            getPosition: d => [d.lon, d.lat],
+            radiusUnits: 'meters',
+            getRadius: sRadiusMeters,
+            getFillColor: [255, 68, 0, 30],
+            getLineColor: [255, 68, 0, 240],
+            getLineWidth: 4,
+            stroked: true,
+            filled: true
+          }));
+        }
+
+        layers.push(new ScatterplotLayer({
+          id: 'hypo-center',
+          data: [hypo],
+          getPosition: d => [d.lon, d.lat],
+          radiusUnits: 'pixels',
+          getRadius: 8,
+          getFillColor: [255, 8, 68, 200],
+          getLineColor: [255, 255, 255, 255],
+          getLineWidth: 2,
+          stroked: true,
+          filled: true,
+        }));
+      }
+
+      if (stations) {
+        const stateArr = engine.getStationStates();
+        const data = Array.from({ length: stations.totalStations }, (_, i) => i);
+        const blinkPhase = (Math.sin(Date.now() / 120.0) + 1) / 2;
+
+        layers.push(new ScatterplotLayer({
+          id: 'stations',
+          data,
+          radiusUnits: 'pixels',
+          getPosition: d => [stations.lons[d], stations.lats[d]],
+          getFillColor: d => {
+            const st = stateArr[d];
+            if (st === StationState.IDLE) return [140, 150, 170, 70];
+            if (st === StationState.P_TRIGGERED) return [0, 207, 255, 200];
+
+            const config = engine.getConfig();
+            if (!config) return [140, 150, 170, 70];
+            const R = engine.hypocentralDists[d];
+            const arv = stations.ampFactors[d];
+            const rSlab = engine.slabFractions[d];
+            const { jmaScale } = calculateJmaIntensity(R, config.hypocenter.depth, config.hypocenter.magnitude, arv, rSlab);
+            const colorDef = JMA_COLORS[JMA_SCALE_MAP[jmaScale]] || JMA_COLORS[0];
+            return [...colorDef.rgb, 255];
+          },
+          getLineColor: d => {
+            const st = stateArr[d];
+            if (st === StationState.IDLE) return [255, 255, 255, 120];
+            if (st === StationState.P_TRIGGERED) return [255, 255, 255, 255];
+            const alpha = Math.floor(180 + blinkPhase * 75);
+            return [255, 255, 255, alpha];
+          },
+          getRadius: d => {
+            const st = stateArr[d];
+            if (st === StationState.IDLE) return 3.5;
+            if (st === StationState.P_TRIGGERED) return 5.5;
+            return 8.5 + blinkPhase * 1.5;
+          },
+          getLineWidth: d => {
+            const st = stateArr[d];
+            if (st === StationState.IDLE) return 1;
+            if (st === StationState.P_TRIGGERED) return 1.5;
+            return 2.5;
+          },
+          stroked: true,
+          filled: true,
+          updateTriggers: {
+            getFillColor: [stateArr],
+            getLineColor: [stateArr, blinkPhase],
+            getRadius: [stateArr, blinkPhase],
+            getLineWidth: [stateArr]
+          }
+        }));
+      }
+
+      deckgl.setProps({ layers });
+    }
+
+    function updateHud(p, s) {
+      document.getElementById('sim-time').innerText = engine.getSimTime().toFixed(1) + ' s';
+      document.getElementById('p-count').innerText = p;
+      document.getElementById('s-count').innerText = s;
+      updateTimeline(p, s);
+    }
+
+    function updateTimeline(p, s) {
+      const config = engine.getConfig();
+      const mag = config ? config.hypocenter.magnitude : 0;
+      const report = eewEngine.latestReport;
+      const isFinal = report?.isFinal || false;
+
+      const steps = [
+        { id: 'step-0', active: isPlaying },
+        { id: 'step-1', active: p > 0 },
+        { id: 'step-2', active: eewEngine.reportCount >= 1 },
+        { id: 'step-3', active: eewEngine.isWarningIssued || report?.type === 'WARNING' },
+        { id: 'step-4', active: s > 0 },
+        { id: 'step-5', active: isFinal },
+        { id: 'step-6', active: isFinal && mag >= 7.0 },
+        { id: 'step-7', active: isFinal },
+      ];
+
+      let currentActiveIndex = -1;
+      for (let i = 0; i < steps.length; i++) {
+        if (steps[i].active) {
+          currentActiveIndex = i;
+        }
+      }
+
+      for (let i = 0; i < steps.length; i++) {
+        const el = document.getElementById(steps[i].id);
+        if (!el) continue;
+
+        el.classList.remove('active', 'completed');
+        if (i < currentActiveIndex) {
+          el.classList.add('completed');
+        } else if (i === currentActiveIndex) {
+          el.classList.add('active');
+        }
+      }
+    }
+
+    function updateEEWBanner(report) {
+      const banner = document.getElementById('eew-banner');
+      banner.style.display = 'block';
+
+      if (report.type === 'WARNING') {
+        banner.style.background = 'rgba(220, 38, 38, 0.6)';
+        banner.style.borderColor = 'rgba(255, 0, 0, 1)';
+        banner.style.boxShadow = '0 0 15px rgba(220, 38, 38, 0.8)';
+      } else {
+        banner.style.background = 'rgba(220, 38, 38, 0.3)';
+        banner.style.borderColor = 'rgba(220, 38, 38, 0.7)';
+        banner.style.boxShadow = 'none';
+      }
+
+      const mag = report.estimatedHypocenter.magnitude.toFixed(1);
+      const count = report.triggeredStationCount;
+      const finalTag = report.isFinal ? ' [最終報]' : '';
+      const typeTag = report.type === 'WARNING' ? '【警報】' : '【予報】';
+
+      banner.innerText = `${typeTag} EEW 第${report.reportNumber}報${finalTag} (M${mag} / 検知: ${count}点)`;
+    }
+
+    function tick(time) {
+      if (!isPlaying) {
+        lastTick = time;
+        requestAnimationFrame(tick);
+        return;
+      }
+
+      const dt = (time - lastTick) / 1000;
+      lastTick = time;
+
+      const simResult = engine.update(dt);
+
+      const eewReport = eewEngine.update(
+        simResult.newTriggers,
+        stations.lats,
+        stations.lons,
+        stations.ampFactors,
+        simResult.simTime
+      );
+      if (eewReport) {
+        updateEEWBanner(eewReport);
+      }
+
+      let p = 0;
+      let s = 0;
+
+      const stateArr = engine.getStationStates();
+      for (let i = 0; i < stateArr.length; i++) {
+        if (stateArr[i] === StationState.P_TRIGGERED) p++;
+        if (stateArr[i] === StationState.S_ARRIVED) s++;
+      }
+
+      updateHud(p, s);
+      renderLayers();
+      requestAnimationFrame(tick);
+    }
+
+    document.getElementById('play-btn').onclick = () => {
+      isPlaying = !isPlaying;
+      document.getElementById('play-btn').innerText = isPlaying ? '一時停止' : 'シミュレーション再開';
+    };
+
+    document.getElementById('reset-btn').onclick = () => {
+      engine.reset();
+      eewEngine.reset();
+      isPlaying = false;
+      document.getElementById('play-btn').innerText = 'シミュレーション開始';
+      document.getElementById('eew-banner').style.display = 'none';
+      updateHud(0, 0);
+      renderLayers();
+    };
+
+    document.getElementById('depth').oninput = e => {
+      document.getElementById('depth-val').innerText = e.target.value + ' km';
+      const config = engine.getConfig();
+      if (config) {
+        config.hypocenter.depth = parseFloat(e.target.value);
+        engine.init(config);
+        eewEngine.reset();
+        document.getElementById('eew-banner').style.display = 'none';
+      }
+    };
+
+    document.getElementById('mag').oninput = e => {
+      document.getElementById('mag-val').innerText = parseFloat(e.target.value).toFixed(1);
+      const config = engine.getConfig();
+      if (config) {
+        config.hypocenter.magnitude = parseFloat(e.target.value);
+        engine.init(config);
+        eewEngine.reset();
+        document.getElementById('eew-banner').style.display = 'none';
+      }
+    };
+
+    async function start() {
+      await loadData();
+      requestAnimationFrame(tick);
+    }
+    start();
+  </script>
+</body>
+
 </html>
