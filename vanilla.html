@@ -415,7 +415,15 @@
           id: 'japan-landmass',
           data: './public/data/prefectures.geojson',
           filled: true,
-          getFillColor: [20, 30, 48, 255],
+          getFillColor: d => {
+            const report = eewEngine.latestReport;
+            if (report && report.type === 'WARNING') {
+              // In a real app, we would check if the prefecture is in the warning area.
+              // For this simulator, we color the whole map red to indicate a public alert.
+              return [220, 38, 38, 100];
+            }
+            return [20, 30, 48, 255];
+          },
           getLineColor: [60, 90, 130, 180],
           lineWidthMinPixels: 1.2,
         })
