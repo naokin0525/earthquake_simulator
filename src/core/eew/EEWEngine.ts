@@ -147,9 +147,13 @@ export class EEWEngine {
         maxPredictedIntensity = jmaScale;
       }
 
-      // EEW Warning threshold: predicted intensity >= 4 for alert zones
-      const isPrefWarning = isJmaGreaterOrEqual(jmaScale, '4');
-      if (isJmaGreaterOrEqual(jmaScale, '5-')) {
+      // EEW Warning threshold:
+      // 1. Multi-station validation: must be supported by >= 2 stations
+      // 2. Intensity threshold: predicted intensity >= 5-Lower
+      const hasMultiStationValidation = this.triggeredObservations.length >= 2;
+      const isIntensityThresholdMet = isJmaGreaterOrEqual(jmaScale, '5-');
+
+      if (hasMultiStationValidation && isIntensityThresholdMet) {
         isWarningAlertNeeded = true;
       }
 
@@ -157,7 +161,7 @@ export class EEWEngine {
         prefCode: code,
         prefName: pref.name,
         maxPredictedIntensity: jmaScale,
-        isWarning: isPrefWarning
+        isWarning: isJmaGreaterOrEqual(jmaScale, '4')
       });
     }
 
