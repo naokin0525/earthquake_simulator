@@ -40,6 +40,7 @@ interface SimulationContextValue {
   isMeshVisible: boolean;
   fps: number;
   isMuted: boolean;
+  isKyoshinMonitor: boolean;
 
   // Actions
   setHypocenter: (lat: number, lon: number) => void;
@@ -52,6 +53,7 @@ interface SimulationContextValue {
   reset: () => void;
   seek: (time: number) => void;
   toggleMute: () => void;
+  toggleKyoshinMonitor: () => void;
 }
 
 const DEFAULT_HYPOCENTER: EarthquakeHypocenter = {
@@ -80,6 +82,7 @@ export const SimulationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   const [lpgmReport, setLpgmReport] = useState<LPGMReport | null>(null);
   const [milestones, setMilestones] = useState<SimulationMilestone[]>([]);
   const [isMeshVisible, setIsMeshVisible] = useState(false);
+const [isKyoshinMonitor, setIsKyoshinMonitor] = useState(false);
   const [fps, setFps] = useState(60);
   const [isMuted, setIsMuted] = useState(audioAlertSystem.getMuted());
 
@@ -266,8 +269,12 @@ export const SimulationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     postWorkerAction({ type: 'SET_SPEED', payload: { speed } });
   }, []);
 
+  const toggleKyoshinMonitor = useCallback(() => {
+    setIsKyoshinMonitor(prev => !prev);
+  }, []);
+
   const toggleMeshVisible = useCallback(() => {
-    setIsMeshVisible((prev) => !prev);
+    setIsMeshVisible(prev => !prev);
   }, []);
 
   return (
@@ -290,6 +297,8 @@ export const SimulationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         isMeshVisible,
         fps,
         isMuted,
+        isKyoshinMonitor,
+        toggleKyoshinMonitor,
         setHypocenter,
         setDepth,
         setMagnitude,
