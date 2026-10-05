@@ -415,17 +415,46 @@
           id: 'japan-landmass',
           data: './public/data/prefectures.geojson',
           filled: true,
+          stroked: true,
           getFillColor: d => {
             const report = eewEngine.latestReport;
-            if (report && report.type === 'WARNING') {
-              // In a real app, we would check if the prefecture is in the warning area.
-              // For this simulator, we color the whole map red to indicate a public alert.
-              return [220, 38, 38, 100];
+            if (report && report.warnedPrefectures) {
+              const prefCode = d?.properties?.pref;
+              const prefWarn = report.warnedPrefectures.find(p => p.prefCode === prefCode);
+              if (prefWarn && prefWarn.isWarning) {
+                return [220, 38, 38, 190]; // Highlight affected alert area with rich red
+              }
             }
             return [20, 30, 48, 255];
           },
-          getLineColor: [60, 90, 130, 180],
+          getLineColor: d => {
+            const report = eewEngine.latestReport;
+            if (report && report.warnedPrefectures) {
+              const prefCode = d?.properties?.pref;
+              const prefWarn = report.warnedPrefectures.find(p => p.prefCode === prefCode);
+              if (prefWarn && prefWarn.isWarning) {
+                return [254, 240, 138, 255]; // Glowing bright outline for affected warning prefectures
+              }
+            }
+            return [60, 90, 130, 180];
+          },
+          getLineWidth: d => {
+            const report = eewEngine.latestReport;
+            if (report && report.warnedPrefectures) {
+              const prefCode = d?.properties?.pref;
+              const prefWarn = report.warnedPrefectures.find(p => p.prefCode === prefCode);
+              if (prefWarn && prefWarn.isWarning) {
+                return 3;
+              }
+            }
+            return 1;
+          },
           lineWidthMinPixels: 1.2,
+          updateTriggers: {
+            getFillColor: [eewEngine.reportCount, eewEngine.latestReport?.reportNumber, eewEngine.latestReport?.isWarning],
+            getLineColor: [eewEngine.reportCount, eewEngine.latestReport?.reportNumber, eewEngine.latestReport?.isWarning],
+            getLineWidth: [eewEngine.reportCount, eewEngine.latestReport?.reportNumber, eewEngine.latestReport?.isWarning]
+          }
         })
       ];
 
@@ -599,9 +628,18 @@
       const mag = report.estimatedHypocenter.magnitude.toFixed(1);
       const count = report.triggeredStationCount;
       const finalTag = report.isFinal ? ' [最終報]' : '';
-      const typeTag = report.type === 'WARNING' ? '【警報】' : '【予報】';
+      const typeTag = report.type === 'WARNING' || report.isWarning ? '【警報】' : '【予報】';
 
-      banner.innerText = `${typeTag} EEW 第${report.reportNumber}報${finalTag} (M${mag} / 検知: ${count}点)`;
+      const warnedNames = report.warnedPrefectures
+        ? report.warnedPrefectures.filter(p => p.isWarning).map(p => p.prefName)
+        : [];
+
+      let text = `${typeTag} EEW 第${report.reportNumber}報${finalTag} (M${mag} / 検知: ${count}点)`;
+      if (warnedNames.length > 0) {
+        text += `\n対象地域: ${warnedNames.slice(0, 8).join('、')}${warnedNames.length > 8 ? ` 等 (${warnedNames.length}地域)` : ''}`;
+      }
+      banner.innerText = text;
+      banner.style.whiteSpace = 'pre-line';
     }
 
     function tick(time) {
