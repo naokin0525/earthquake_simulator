@@ -226,14 +226,30 @@
     <div class="glass-panel timeline-panel">
       <h3 style="margin-top:0; color:var(--accent-cyan); margin-bottom: 12px; font-size: 14px;">JMA Event Flow</h3>
       <div id="jma-timeline">
-        <div class="timeline-step" id="step-0"><div class="step-dot"></div><span>1. 地震発生</span></div>
-        <div class="timeline-step" id="step-1"><div class="step-dot"></div><span>2. 揺れの検知 (P波検知)</span></div>
-        <div class="timeline-step" id="step-2"><div class="step-dot"></div><span>3. 緊急地震速報 (予報): M3.5以上、または推定最大震度3以上などで発行</span></div>
-        <div class="timeline-step" id="step-3"><div class="step-dot"></div><span>4. 緊急地震速報 (警報): 2点以上の観測点検知かつ最大震度5弱以上などで発行</span></div>
-        <div class="timeline-step" id="step-4"><div class="step-dot"></div><span>5. 主要動到達 (S波検知)</span></div>
-        <div class="timeline-step" id="step-5"><div class="step-dot"></div><span>6. 震度速報</span></div>
-        <div class="timeline-step" id="step-6"><div class="step-dot"></div><span>7. 地震情報 (M7.0以上で長周期地震動情報を含む)</span></div>
-        <div class="timeline-step" id="step-7"><div class="step-dot"></div><span>8. 推定震度分布図</span></div>
+        <div class="timeline-step" id="step-0">
+          <div class="step-dot"></div><span>1. 地震発生</span>
+        </div>
+        <div class="timeline-step" id="step-1">
+          <div class="step-dot"></div><span>2. 揺れの検知 (P波検知)</span>
+        </div>
+        <div class="timeline-step" id="step-2">
+          <div class="step-dot"></div><span>3. 緊急地震速報 (予報): M3.5以上、または推定最大震度3以上などで発行</span>
+        </div>
+        <div class="timeline-step" id="step-3">
+          <div class="step-dot"></div><span>4. 緊急地震速報 (警報): 2点以上の観測点検知かつ最大震度5弱以上などで発行</span>
+        </div>
+        <div class="timeline-step" id="step-4">
+          <div class="step-dot"></div><span>5. 主要動到達 (S波検知)</span>
+        </div>
+        <div class="timeline-step" id="step-5">
+          <div class="step-dot"></div><span>6. 震度速報</span>
+        </div>
+        <div class="timeline-step" id="step-6">
+          <div class="step-dot"></div><span>7. 地震情報 (M7.0以上で長周期地震動情報を含む)</span>
+        </div>
+        <div class="timeline-step" id="step-7">
+          <div class="step-dot"></div><span>8. 推定震度分布図</span>
+        </div>
       </div>
     </div>
 
@@ -244,6 +260,7 @@
       <input type="range" id="mag" min="0.1" max="13.0" step="0.1" value="7.0">
       <button id="play-btn" class="btn">シミュレーション開始</button>
       <button id="reset-btn" class="btn btn-stop" style="margin-top: 8px;">リセット</button>
+      <button id="kyoshin-btn" class="btn" style="margin-top: 8px;">強震モニター</button>
     </div>
 
     <div class="glass-panel legend" id="legend-container">
@@ -274,6 +291,141 @@
     const JMA_SCALE_MAP = {
       '0': 0, '1': 1, '2': 2, '3': 3, '4': 4, '5-': 5, '5+': 6, '6-': 7, '6+': 8, '7': 9
     };
+
+    // Kyoshin monitor gradient for instrumental intensity (-3 to 8)
+    const KYOSHI_GRADIENT = [
+      { Intensity: -3, R: 0, G: 0, B: 205 },
+      { Intensity: -2.9, R: 0, G: 7, B: 209 },
+      { Intensity: -2.8, R: 0, G: 14, B: 214 },
+      { Intensity: -2.7, R: 0, G: 21, B: 218 },
+      { Intensity: -2.6, R: 0, G: 28, B: 223 },
+      { Intensity: -2.5, R: 0, G: 36, B: 227 },
+      { Intensity: -2.4, R: 0, G: 43, B: 231 },
+      { Intensity: -2.3, R: 0, G: 50, B: 236 },
+      { Intensity: -2.2, R: 0, G: 57, B: 240 },
+      { Intensity: -2.1, R: 0, G: 64, B: 245 },
+      { Intensity: -2, R: 0, G: 72, B: 250 },
+      { Intensity: -1.9, R: 0, G: 85, B: 238 },
+      { Intensity: -1.8, R: 0, G: 99, B: 227 },
+      { Intensity: -1.7, R: 0, G: 112, B: 216 },
+      { Intensity: -1.6, R: 0, G: 126, B: 205 },
+      { Intensity: -1.5, R: 0, G: 140, B: 194 },
+      { Intensity: -1.4, R: 0, G: 153, B: 183 },
+      { Intensity: -1.3, R: 0, G: 167, B: 172 },
+      { Intensity: -1.2, R: 0, G: 180, B: 161 },
+      { Intensity: -1.1, R: 0, G: 194, B: 150 },
+      { Intensity: -1, R: 0, G: 208, B: 139 },
+      { Intensity: -0.9, R: 6, G: 212, B: 130 },
+      { Intensity: -0.8, R: 12, G: 216, B: 121 },
+      { Intensity: -0.7, R: 18, G: 220, B: 113 },
+      { Intensity: -0.6, R: 25, G: 224, B: 104 },
+      { Intensity: -0.5, R: 31, G: 228, B: 96 },
+      { Intensity: -0.4, R: 37, G: 233, B: 88 },
+      { Intensity: -0.3, R: 44, G: 237, B: 79 },
+      { Intensity: -0.2, R: 50, G: 241, B: 71 },
+      { Intensity: -0.1, R: 56, G: 245, B: 62 },
+      { Intensity: 0, R: 63, G: 250, B: 54 },
+      { Intensity: 0.1, R: 75, G: 250, B: 49 },
+      { Intensity: 0.2, R: 88, G: 250, B: 45 },
+      { Intensity: 0.3, R: 100, G: 251, B: 41 },
+      { Intensity: 0.4, R: 113, G: 251, B: 37 },
+      { Intensity: 0.5, R: 125, G: 252, B: 33 },
+      { Intensity: 0.6, R: 138, G: 252, B: 28 },
+      { Intensity: 0.7, R: 151, G: 253, B: 24 },
+      { Intensity: 0.8, R: 163, G: 253, B: 20 },
+      { Intensity: 0.9, R: 176, G: 254, B: 16 },
+      { Intensity: 1, R: 189, G: 255, B: 12 },
+      { Intensity: 1.1, R: 195, G: 254, B: 10 },
+      { Intensity: 1.2, R: 202, G: 254, B: 9 },
+      { Intensity: 1.3, R: 208, G: 254, B: 8 },
+      { Intensity: 1.4, R: 215, G: 254, B: 7 },
+      { Intensity: 1.5, R: 222, G: 255, B: 5 },
+      { Intensity: 1.6, R: 228, G: 254, B: 4 },
+      { Intensity: 1.7, R: 235, G: 255, B: 3 },
+      { Intensity: 1.8, R: 241, G: 254, B: 2 },
+      { Intensity: 1.9, R: 248, G: 255, B: 1 },
+      { Intensity: 2, R: 255, G: 255, B: 0 },
+      { Intensity: 2.1, R: 254, G: 251, B: 0 },
+      { Intensity: 2.2, R: 254, G: 248, B: 0 },
+      { Intensity: 2.3, R: 254, G: 244, B: 0 },
+      { Intensity: 2.4, R: 254, G: 241, B: 0 },
+      { Intensity: 2.5, R: 255, G: 238, B: 0 },
+      { Intensity: 2.6, R: 254, G: 234, B: 0 },
+      { Intensity: 2.7, R: 255, G: 231, B: 0 },
+      { Intensity: 2.8, R: 254, G: 227, B: 0 },
+      { Intensity: 2.9, R: 255, G: 224, B: 0 },
+      { Intensity: 3, R: 255, G: 221, B: 0 },
+      { Intensity: 3.1, R: 254, G: 213, B: 0 },
+      { Intensity: 3.2, R: 254, G: 205, B: 0 },
+      { Intensity: 3.3, R: 254, G: 197, B: 0 },
+      { Intensity: 3.4, R: 254, G: 190, B: 0 },
+      { Intensity: 3.5, R: 255, G: 182, B: 0 },
+      { Intensity: 3.6, R: 254, G: 174, B: 0 },
+      { Intensity: 3.7, R: 255, G: 167, B: 0 },
+      { Intensity: 3.8, R: 254, G: 159, B: 0 },
+      { Intensity: 3.9, R: 255, G: 151, B: 0 },
+      { Intensity: 4, R: 255, G: 144, B: 0 },
+      { Intensity: 4.1, R: 254, G: 136, B: 0 },
+      { Intensity: 4.2, R: 254, G: 128, B: 0 },
+      { Intensity: 4.3, R: 254, G: 121, B: 0 },
+      { Intensity: 4.4, R: 254, G: 113, B: 0 },
+      { Intensity: 4.5, R: 255, G: 106, B: 0 },
+      { Intensity: 4.6, R: 254, G: 98, B: 0 },
+      { Intensity: 4.7, R: 255, G: 90, B: 0 },
+      { Intensity: 4.8, R: 254, G: 83, B: 0 },
+      { Intensity: 4.9, R: 255, G: 75, B: 0 },
+      { Intensity: 5, R: 255, G: 68, B: 0 },
+      { Intensity: 5.1, R: 254, G: 61, B: 0 },
+      { Intensity: 5.2, R: 253, G: 54, B: 0 },
+      { Intensity: 5.3, R: 252, G: 47, B: 0 },
+      { Intensity: 5.4, R: 251, G: 40, B: 0 },
+      { Intensity: 5.5, R: 250, G: 33, B: 0 },
+      { Intensity: 5.6, R: 249, G: 27, B: 0 },
+      { Intensity: 5.7, R: 248, G: 20, B: 0 },
+      { Intensity: 5.8, R: 247, G: 13, B: 0 },
+      { Intensity: 5.9, R: 246, G: 6, B: 0 },
+      { Intensity: 6, R: 245, G: 0, B: 0 },
+      { Intensity: 6.1, R: 238, G: 0, B: 0 },
+      { Intensity: 6.2, R: 230, G: 0, B: 0 },
+      { Intensity: 6.3, R: 223, G: 0, B: 0 },
+      { Intensity: 6.4, R: 215, G: 0, B: 0 },
+      { Intensity: 6.5, R: 208, G: 0, B: 0 },
+      { Intensity: 6.6, R: 200, G: 0, B: 0 },
+      { Intensity: 6.7, R: 192, G: 0, B: 0 },
+      { Intensity: 6.8, R: 185, G: 0, B: 0 },
+      { Intensity: 6.9, R: 177, G: 0, B: 0 },
+      { Intensity: 7, R: 170, G: 0, B: 0 },
+      { Intensity: 8, R: 0, G: 0, B: 0 }
+    ];
+
+    function getKyoshinColor(val) {
+      const min = KYOSHI_GRADIENT[0].Intensity;
+      const max = KYOSHI_GRADIENT[KYOSHI_GRADIENT.length - 1].Intensity;
+      if (val <= min) {
+        const { R, G, B } = KYOSHI_GRADIENT[0];
+        return [R, G, B, 255];
+      }
+      if (val >= max) {
+        const { R, G, B } = KYOSHI_GRADIENT[KYOSHI_GRADIENT.length - 1];
+        return [R, G, B, 255];
+      }
+      for (let i = 0; i < KYOSHI_GRADIENT.length - 1; i++) {
+        const a = KYOSHI_GRADIENT[i];
+        const b = KYOSHI_GRADIENT[i + 1];
+        if (val >= a.Intensity && val <= b.Intensity) {
+          const t = (val - a.Intensity) / (b.Intensity - a.Intensity);
+          const r = Math.round(a.R + t * (b.R - a.R));
+          const g = Math.round(a.G + t * (b.G - a.G));
+          const bcol = Math.round(a.B + t * (b.B - a.B));
+          return [r, g, bcol, 255];
+        }
+      }
+      const { R, G, B } = KYOSHI_GRADIENT[0];
+      return [R, G, B, 255];
+    }
+
+    let isKyoshinMonitor = false;
+    const triggerEventsMap = new Map();
 
     const legContainer = document.getElementById('legend-container');
     JMA_COLORS.forEach(j => {
@@ -521,6 +673,11 @@
           radiusUnits: 'pixels',
           getPosition: d => [stations.lons[d], stations.lats[d]],
           getFillColor: d => {
+            if (isKyoshinMonitor) {
+              const ev = triggerEventsMap.get(d);
+              const intensity = ev?.continuousIntensity ?? -3;
+              return getKyoshinColor(intensity);
+            }
             const st = stateArr[d];
             if (st === StationState.IDLE) return [140, 150, 170, 70];
             if (st === StationState.P_TRIGGERED) return [0, 207, 255, 200];
@@ -535,6 +692,7 @@
             return [...colorDef.rgb, 255];
           },
           getLineColor: d => {
+            if (isKyoshinMonitor) return [0, 0, 0, 0];
             const st = stateArr[d];
             if (st === StationState.IDLE) return [255, 255, 255, 120];
             if (st === StationState.P_TRIGGERED) return [255, 255, 255, 255];
@@ -542,6 +700,7 @@
             return [255, 255, 255, alpha];
           },
           getRadius: d => {
+            if (isKyoshinMonitor) return 3.5;
             const st = stateArr[d];
             if (st === StationState.IDLE) return 3.5;
             if (st === StationState.P_TRIGGERED) return 5.5;
@@ -655,14 +814,14 @@
       const simResult = engine.update(dt);
 
       const eewReport = eewEngine.update(
-          simResult.newTriggers,
-          stations.lats,
-          stations.lons,
-          stations.ampFactors,
-          simResult.simTime
+        simResult.newTriggers,
+        stations.lats,
+        stations.lons,
+        stations.ampFactors,
+        simResult.simTime
       );
       if (eewReport) {
-          updateEEWBanner(eewReport);
+        updateEEWBanner(eewReport);
       }
 
       let p = 0;
@@ -672,6 +831,14 @@
       for (let i = 0; i < stateArr.length; i++) {
         if (stateArr[i] === StationState.P_TRIGGERED) p++;
         if (stateArr[i] === StationState.S_ARRIVED) s++;
+      }
+
+      // Update trigger events map for Kyoshin mode
+      triggerEventsMap.clear();
+      if (simResult && simResult.newTriggers) {
+        simResult.newTriggers.forEach(ev => {
+          triggerEventsMap.set(ev.stationIndex, ev);
+        });
       }
 
       updateHud(p, s);
@@ -691,6 +858,12 @@
       document.getElementById('play-btn').innerText = 'シミュレーション開始';
       document.getElementById('eew-banner').style.display = 'none';
       updateHud(0, 0);
+      renderLayers();
+    };
+
+    document.getElementById('kyoshin-btn').onclick = () => {
+      isKyoshinMonitor = !isKyoshinMonitor;
+      document.getElementById('kyoshin-btn').innerText = isKyoshinMonitor ? 'Kyoshin OFF' : '京振モニター';
       renderLayers();
     };
 
