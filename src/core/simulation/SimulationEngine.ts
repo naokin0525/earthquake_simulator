@@ -1,6 +1,6 @@
 /**
  * src/core/simulation/SimulationEngine.ts
- * ========================================
+ * =======================================
  * High-performance stateful simulation engine for ground truth wave propagation
  * and station trigger state updates.
  */
@@ -173,6 +173,10 @@ export class SimulationEngine {
 
         this.measuredPgvs[i] = pgvSurface;
 
+        // Simple placeholder conversion from PGV (cm/s) to acceleration (gal)
+        // 1 gal ≈ 1 cm/s²; we approximate acceleration as PGV * 10 for demo purposes.
+        const accelerationGal = pgvSurface * 10;
+
         newTriggers.push({
           stationIndex: i,
           state: StationState.P_TRIGGERED,
@@ -181,7 +185,8 @@ export class SimulationEngine {
           sArrivalTime: sArr,
           pgvSurface,
           intensity: jmaScale,
-          continuousIntensity
+          continuousIntensity,
+          accelerationGal
         });
       } else if (currentState === StationState.P_TRIGGERED && this.simTime >= sArr) {
         // Switch to S_ARRIVED
@@ -199,6 +204,9 @@ export class SimulationEngine {
           rSlab
         );
 
+        // Reuse same placeholder conversion for acceleration (not used for S_ARRIVED events)
+        const accelerationGal = pgvSurface * 10;
+
         newTriggers.push({
           stationIndex: i,
           state: StationState.S_ARRIVED,
@@ -207,7 +215,8 @@ export class SimulationEngine {
           sArrivalTime: sArr,
           pgvSurface,
           intensity: jmaScale,
-          continuousIntensity
+          continuousIntensity,
+          accelerationGal
         });
       }
     }

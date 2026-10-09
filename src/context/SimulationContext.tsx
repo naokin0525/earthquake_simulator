@@ -8,7 +8,6 @@ import React, { createContext, useContext, useEffect, useRef, useState, useCallb
 import {
   EEWReport,
   EarthquakeHypocenter,
-  SimulationConfig,
   SimulationTickState,
   StationDataBuffer,
   StationState,
@@ -19,6 +18,11 @@ import {
   LPGMReport,
   SimulationMilestone
 } from '../core/types';
+import {
+  createSimulationConfig,
+  DEFAULT_HYPOCENTER,
+  shouldPlayEewWarningChime
+} from '../core/simulationState';
 import { StationLoader } from '../loaders/StationLoader';
 import { audioAlertSystem } from '../utils/audioAlert';
 
@@ -56,14 +60,6 @@ interface SimulationContextValue {
   toggleKyoshinMonitor: () => void;
 }
 
-const DEFAULT_HYPOCENTER: EarthquakeHypocenter = {
-  lat: 35.5,
-  lon: 139.5,
-  depth: 20.0,
-  magnitude: 6.8,
-  originTime: 0.0
-};
-
 const SimulationContext = createContext<SimulationContextValue | null>(null);
 
 export const SimulationProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -89,12 +85,82 @@ const [isKyoshinMonitor, setIsKyoshinMonitor] = useState(false);
   const stationStatesRef = useRef<Uint8Array>(new Uint8Array(0));
   const triggerEventsMapRef = useRef<Map<number, StationTriggerEvent>>(new Map());
 
+  const clearReportState = useCallback(() => {
+    setEewReport(null);
+    setFlashReport(null);
+    setLpgmReport(null);
+    setMilestones([]);
+  }, []);
+
   // FPS Counter
   const frameCountRef = useRef(0);
   const lastFpsTimeRef = useRef(performance.now());
 
+  const updateFps = useCallback(() => {
+    frameCountRef.current++;
+    const now = performance.now();
+    if (now - lastFpsTimeRef.current >= 1000) {
+      setFps(Math.round((frameCountRef.current * 1000) / (now - lastFpsTimeRef.current)));
+      frameCountRef.current = 0;
+      lastFpsTimeRef.current = now;
+    }
+  }, []);
+
+  const handleWorkerMessage = useCallback((event: MessageEvent<WorkerOutboundEvent>) => {
+    const msg = event.data;
+
+    switch (msg.type) {
+      case 'READY':
+        setIsReady(true);
+        break;
+
+      case 'TICK': {
+        const tick: SimulationTickState = msg.payload;
+        setSimTime(tick.simTime);
+        setPRadiusKm(tick.pWaveRadiusKm);
+        setSRadiusKm(tick.sWaveRadiusKm);
+
+        for (const ev of tick.newTriggers) {
+          stationStatesRef.current[ev.stationIndex] = ev.state;
+          triggerEventsMapRef.current.set(ev.stationIndex, ev);
+        }
+
+        if (tick.currentEEWReport) {
+          setEewReport(tick.currentEEWReport);
+        }
+
+        updateFps();
+        break;
+      }
+
+      case 'EEW_ALERT':
+        setEewReport((previousReport) => {
+          const nextReport = msg.payload;
+          if (shouldPlayEewWarningChime(previousReport, nextReport)) {
+            audioAlertSystem.playEewWarningChime();
+          }
+          return nextReport;
+        });
+        break;
+
+      case 'FLASH_REPORT':
+        setFlashReport(msg.payload);
+        break;
+
+      case 'LPGM_REPORT':
+        setLpgmReport(msg.payload);
+        break;
+
+      case 'MILESTONE':
+        setMilestones((previousMilestones) => [...previousMilestones, msg.payload]);
+        break;
+
+      default:
+        break;
+    }
+  }, [updateFps]);
+
   useEffect(() => {
-    // 1. Load station binary data
     StationLoader.loadStations('/data/stations/stations.bin', '/data/stations/stations_meta.json')
       .then((dataSet) => {
         const buffer: StationDataBuffer = {
@@ -104,75 +170,16 @@ const [isKyoshinMonitor, setIsKyoshinMonitor] = useState(false);
           ampFactors: dataSet.ampFactors,
           prefCodes: dataSet.prefCodes
         };
+
         setStationBuffer(buffer);
         stationStatesRef.current = new Uint8Array(dataSet.totalStations);
 
-        // 2. Instantiate Web Worker
         const worker = new Worker(new URL('../workers/simulation.worker.ts', import.meta.url), {
           type: 'module'
         });
+
         workerRef.current = worker;
-
-        worker.onmessage = (event: MessageEvent<WorkerOutboundEvent>) => {
-          const msg = event.data;
-          switch (msg.type) {
-            case 'READY':
-              setIsReady(true);
-              break;
-
-            case 'TICK': {
-              const tick: SimulationTickState = msg.payload;
-              setSimTime(tick.simTime);
-              setPRadiusKm(tick.pWaveRadiusKm);
-              setSRadiusKm(tick.sWaveRadiusKm);
-
-              // Update station trigger states
-              for (const ev of tick.newTriggers) {
-                stationStatesRef.current[ev.stationIndex] = ev.state;
-                triggerEventsMapRef.current.set(ev.stationIndex, ev);
-              }
-
-              if (tick.currentEEWReport) {
-                setEewReport(tick.currentEEWReport);
-              }
-
-              // Update FPS counter
-              frameCountRef.current++;
-              const now = performance.now();
-              if (now - lastFpsTimeRef.current >= 1000) {
-                setFps(Math.round((frameCountRef.current * 1000) / (now - lastFpsTimeRef.current)));
-                frameCountRef.current = 0;
-                lastFpsTimeRef.current = now;
-              }
-              break;
-            }
-
-            case 'EEW_ALERT':
-              setEewReport(msg.payload);
-              // Play warning chime if this is the first warning
-              if (msg.payload.isWarning && !eewReport?.isWarning) {
-                audioAlertSystem.playEewWarningChime();
-              }
-              break;
-
-            case 'FLASH_REPORT':
-              setFlashReport(msg.payload);
-              break;
-
-            case 'LPGM_REPORT':
-              setLpgmReport(msg.payload);
-              break;
-
-            case 'MILESTONE':
-              setMilestones(prev => [...prev, msg.payload]);
-              break;
-
-            default:
-              break;
-          }
-        };
-
-        // Send INIT_STATIONS to Worker
+        worker.onmessage = handleWorkerMessage;
         worker.postMessage({ type: 'INIT_STATIONS', payload: buffer });
       })
       .catch((err) => {
@@ -184,7 +191,7 @@ const [isKyoshinMonitor, setIsKyoshinMonitor] = useState(false);
         workerRef.current.terminate();
       }
     };
-  }, []);
+  }, [handleWorkerMessage]);
 
   const postWorkerAction = (action: WorkerInboundAction) => {
     if (workerRef.current) {
@@ -194,12 +201,8 @@ const [isKyoshinMonitor, setIsKyoshinMonitor] = useState(false);
 
   const play = useCallback(() => {
     if (!isReady || !workerRef.current) return;
-    const config: SimulationConfig = {
-      hypocenter,
-      timeScale,
-      tickIntervalMs: 50,
-      noiseStdDev: 0.15
-    };
+
+    const config = createSimulationConfig(hypocenter, timeScale);
 
     if (!isPlaying && simTime === 0.0) {
       postWorkerAction({ type: 'START', payload: config });
@@ -220,25 +223,17 @@ const [isKyoshinMonitor, setIsKyoshinMonitor] = useState(false);
     setSimTime(0.0);
     setPRadiusKm(0.0);
     setSRadiusKm(0.0);
-    setEewReport(null);
-    setFlashReport(null);
-    setLpgmReport(null);
-    setMilestones([]);
+    clearReportState();
     if (stationBuffer) {
       stationStatesRef.current.fill(0);
     }
     triggerEventsMapRef.current.clear();
-  }, [stationBuffer]);
+  }, [clearReportState, stationBuffer]);
 
   const seek = useCallback((time: number) => {
     postWorkerAction({ type: 'SEEK', payload: { time } });
-    // Reset reports and milestones because we are jumping in time
-    // The worker will re-emit milestones/reports as it ticks forward
-    setEewReport(null);
-    setFlashReport(null);
-    setLpgmReport(null);
-    setMilestones([]);
-  }, []);
+    clearReportState();
+  }, [clearReportState]);
 
   const toggleMute = useCallback(() => {
     const nextMuted = !isMuted;

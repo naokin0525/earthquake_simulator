@@ -61,6 +61,7 @@ export interface StationTriggerEvent {
   pgvSurface: number;         // Computed peak ground velocity at surface (cm/s)
   intensity: JmaIntensityScale; // Discrete JMA intensity level
   continuousIntensity: number; // Continuous floating point JMA intensity
+  accelerationGal?: number; // Acceleration amplitude in gal (optional, for forecast condition)
 }
 
 export interface PrefectureWarning {

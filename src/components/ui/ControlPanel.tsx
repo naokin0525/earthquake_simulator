@@ -6,7 +6,7 @@
 
 import React from 'react';
 import { useSimulation } from '../../hooks/useSimulation';
-import { Play, Pause, RotateCcw, Layers, Sliders } from 'lucide-react';
+import { Play, Pause, RotateCcw, Layers, Sliders, Eye } from 'lucide-react';
 
 export const ControlPanel: React.FC = () => {
   const {
@@ -14,6 +14,8 @@ export const ControlPanel: React.FC = () => {
     timeScale,
     hypocenter,
     isMeshVisible,
+    isKyoshinMonitor,
+    toggleKyoshinMonitor,
     play,
     pause,
     reset,
@@ -40,6 +42,17 @@ export const ControlPanel: React.FC = () => {
         >
           <Layers className="w-3.5 h-3.5" />
           <span>推計震度</span>
+        </button>
+        <button
+          onClick={toggleKyoshinMonitor}
+          className={`flex items-center space-x-1 text-xs px-2.5 py-1.5 rounded-lg border transition-all ${isKyoshinMonitor
+              ? 'bg-emerald-600/80 border-emerald-400 text-white shadow-lg'
+              : 'bg-slate-800/60 border-slate-600 text-slate-300 hover:bg-slate-700'
+            }`}
+          title="京振モニタースタイル"
+        >
+          <Eye className="w-3.5 h-3.5" />
+          <span>京振モニター</span>
         </button>
       </div>
 
