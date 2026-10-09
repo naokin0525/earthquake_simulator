@@ -70,19 +70,27 @@ export class SimulationEngine {
       const stLat = this.stations.lats[i];
       const stLon = this.stations.lons[i];
 
+      // Slab fraction is used as a path-quality factor: stations near the subduction slab see a
+      // slightly different attenuation velocity/energy behavior than stations in normal crust.
       const rSlab = calculateSlabFraction(hypo.lat, hypo.lon, hypo.depth, stLat, stLon);
       this.slabFractions[i] = rSlab;
 
+      // Approximate local planar distance in km from hypocenter. The 111.0 factor converts
+      // longitude degrees to kilometers by latitude scale, and cos(lat) compensates for the
+      // shrinking east-west distance toward higher latitudes.
       const epiDist = Math.sqrt(
         Math.pow((stLat - hypo.lat) * 111.0, 2) +
         Math.pow((stLon - hypo.lon) * 111.0 * Math.cos(stLat * Math.PI / 180.0), 2)
       );
+
+      // Hypocentral distance in 3D space: sqrt(epicentral² + depth²). We need the full 3D distance
+      // for velocity and ground-motion calculations because depth matters as much as horizontal offset.
       const R = Math.sqrt(epiDist * epiDist + hypo.depth * hypo.depth);
       this.hypocentralDists[i] = R;
       this.pArrivalTimes[i] = R / 6.0; // P-wave 6.0 km/s
       this.sArrivalTimes[i] = R / 3.5; // S-wave 3.5 km/s
 
-      // Add picking noise to observed P trigger time
+      // Add a small Gaussian pick error to mimic real station arrival-time picking variability.
       const noise = generateGaussianNoise(noiseStdDev);
       this.pObservedTimes[i] = Math.max(0.0, this.pArrivalTimes[i] + noise);
     }
@@ -141,9 +149,9 @@ export class SimulationEngine {
     const hypo = this.config.hypocenter;
     const elapsedTime = Math.max(0.0, this.simTime);
 
-    // Wave radii
-    // Note: Visual radii are calculated as distance = velocity * time
-    // P-wave approx 6.0 km/s, S-wave approx 3.5 km/s
+    // The visual wave-front radii are treated as simple distance = velocity * time approximations.
+    // This is intentionally a coarse model for rendering and does not replace the physical arrival-time
+    // calculations used for trigger detection.
     const pWaveRadiusKm = 6.0 * elapsedTime;
     const sWaveRadiusKm = 3.5 * elapsedTime;
 
@@ -156,7 +164,7 @@ export class SimulationEngine {
       const sArr = this.sArrivalTimes[i];
 
       if (currentState === StationState.IDLE && this.simTime >= pObs) {
-        // Switch to P_TRIGGERED
+        // P-wave trigger: a station transitions from silent to activated once the modeled arrival time is reached.
         this.stationStates[i] = StationState.P_TRIGGERED;
 
         const R = this.hypocentralDists[i];
@@ -173,8 +181,8 @@ export class SimulationEngine {
 
         this.measuredPgvs[i] = pgvSurface;
 
-        // Simple placeholder conversion from PGV (cm/s) to acceleration (gal)
-        // 1 gal ≈ 1 cm/s²; we approximate acceleration as PGV * 10 for demo purposes.
+        // Placeholder conversion: in a demo model, acceleration is estimated by scaling PGV by 10,
+        // which is sufficient for UI-level forecast behavior without implementing a full acceleration model.
         const accelerationGal = pgvSurface * 10;
 
         newTriggers.push({
@@ -189,7 +197,8 @@ export class SimulationEngine {
           accelerationGal
         });
       } else if (currentState === StationState.P_TRIGGERED && this.simTime >= sArr) {
-        // Switch to S_ARRIVED
+        // S-wave trigger: once the S-wave arrives, the station enters a stronger state that often
+        // correlates with stronger shaking and more severe EEW intensity estimates.
         this.stationStates[i] = StationState.S_ARRIVED;
 
         const R = this.hypocentralDists[i];

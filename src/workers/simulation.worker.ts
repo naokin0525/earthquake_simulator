@@ -35,14 +35,18 @@ function startTickLoop(): void {
   tickTimer = setInterval(() => {
     if (!simulationEngine || !stationBuffer || !eewEngine || !eventSequencer) return;
 
+    // Each tick advances the simulation by a small real-time delta. The elapsed wall-clock
+    // time is converted to simulated seconds, which lets the engine run faster/slower than real time
+    // according to the configured timeScale factor.
     const now = performance.now();
     const dtSeconds = (now - lastTickTimestamp) / 1000.0;
     lastTickTimestamp = now;
 
-    // Run simulation tick update
+    // 1) Advance the physical simulation state and collect any newly triggered stations.
     const tickState = simulationEngine.update(dtSeconds);
 
-    // Evaluate EEW report updates for newly triggered stations
+    // 2) Evaluate EEW alerts only when new station triggers occurred; this keeps the alert logic
+    //    responsive without reprocessing the full station set on every tick.
     if (tickState.newTriggers.length > 0) {
       const eewReport = eewEngine.update(
         tickState.newTriggers,
@@ -58,11 +62,11 @@ function startTickLoop(): void {
       }
     }
 
-    // Sequence JMA Events and Milestones
+    // 3) Convert the current risk state into milestone/event announcements (e.g. warning issuance,
+    //    flash report, LPGM report) so the UI can show timed narrative feedback.
     const seqResult = eventSequencer.update(
       tickState.simTime,
       simulationEngine.getStationStates().filter((s: number) => s !== 0).length,
-
       tickState.currentEEWReport,
       simulationEngine?.getConfig()?.hypocenter
     );
@@ -79,7 +83,7 @@ function startTickLoop(): void {
       }
     }
 
-    // Emit high-frequency TICK state delta to UI thread
+    // 4) Push the current simulation snapshot to the main thread at the worker's fixed cadence.
     postWorkerMessage({ type: 'TICK', payload: tickState });
   }, TICK_INTERVAL_MS);
 }

@@ -9,42 +9,77 @@ import { JmaIntensityScale } from '../types';
 
 const BASE_K_ATTENUATION = 0.002; // Standard inelastic attenuation coefficient (km^-1)
 
+export type FaultType = 'crustal' | 'interplate' | 'intraplate';
+
+export function resolveFaultType(rSlab: number = 0.0): FaultType {
+  if (rSlab > 0.5) return 'intraplate';
+  return 'crustal';
+}
+
+export function calculateArvFromVs30(avs30: number): number {
+  const safeAvs30 = Math.max(1e-6, avs30);
+
+  // Table 6/Equation (4) relation: log10(ARV) = 1.83 - 0.66 log10(AVS30)
+  // At AVS30 = 600 m/s, ARV is approximately 1, which marks the engineering bedrock baseline.
+  return Math.pow(10.0, 1.83 - 0.66 * Math.log10(safeAvs30));
+}
+
 /**
  * Calculates Peak Ground Velocity on engineering bedrock (PGV_600, in cm/s)
  * using the Si & Midorikawa (1999) empirical attenuation model.
  *
- * Formula:
- *   log10(PGV_600) = 0.58 * Mw + 0.0038 * D - 1.29 - log10(R + 0.0028 * 10^(0.50 * Mw)) - k_eff * R
+ * IMPORTANT:
+ *   - R is the closest distance to the fault plane, not hypocentral distance.
+ *   - D is the average depth of the fault plane, not the hypocenter depth.
+ *   - The published model includes fault-type dummy terms: crustal = 0.00, inter-plate = -0.02,
+ *     intraplate/slab = +0.12. The attenuation coefficient k remains the baseline 0.002 and is
+ *     not modified by slab fraction.
  *
- * @param R Hypocentral distance in kilometers (km)
- * @param D Hypocentral depth in kilometers (km)
- * @param Mw Moment magnitude
- * @param rSlab Raypath fraction inside cold subducting slab [0.0, 1.0]
+ * Formula:
+ *   log10(PGV_600) =
+ *     0.58 * Mw + 0.0038 * D + dummyTerm - 1.29 - log10(R + 0.0028 * 10^(0.50 * Mw)) - k * R
+ *
+ * @param faultDistanceKm Closest distance to the fault plane in km.
+ * @param faultDepthKm Average fault-plane depth in km.
+ * @param Mw Moment magnitude.
+ * @param rSlab Raypath fraction inside cold slab; used only as a fallback signal for intraplate events.
+ * @param faultType Fault type for the published dummy-term correction.
  */
 export function calculateBedrockPgv(
-  R: number,
-  D: number,
+  faultDistanceKm: number,
+  faultDepthKm: number,
   Mw: number,
-  rSlab: number = 0.0
+  rSlab: number = 0.0,
+  faultType: FaultType = resolveFaultType(rSlab)
 ): number {
-  const rClamped = Math.max(0.0, Math.min(1.0, rSlab));
-  
-  // Attenuation coefficient reduced inside cold high-Q subducting slab
-  const kEff = BASE_K_ATTENUATION * (1.0 - 0.75 * rClamped);
+  const clampedDistance = Math.max(0.0, faultDistanceKm);
+  const clampedDepth = Math.max(0.0, faultDepthKm);
+  const safeMw = Math.max(0.0, Mw);
 
-  const saturationTerm = 0.0028 * Math.pow(10.0, 0.50 * Mw);
+  // The paper's dummy terms are additive offsets in log-space, not distance-dependent k changes.
+  // Intraplate/slab events are stronger by +0.12 in log10(PGV), while interplate events are weaker by -0.02.
+  const faultTypeOffset =
+    faultType === 'intraplate' ? 0.12 :
+    faultType === 'interplate' ? -0.02 :
+    0.0;
+
+  // This is the published Si & Midorikawa bedrock attenuation form.
+  const saturationTerm = 0.0028 * Math.pow(10.0, 0.50 * safeMw);
   const log10Pgv600 =
-    0.58 * Mw +
-    0.0038 * D -
+    0.58 * safeMw +
+    0.0038 * clampedDepth +
+    faultTypeOffset -
     1.29 -
-    Math.log10(R + saturationTerm) -
-    kEff * R;
+    Math.log10(clampedDistance + saturationTerm) -
+    BASE_K_ATTENUATION * clampedDistance;
 
   return Math.pow(10.0, log10Pgv600);
 }
 
 /**
  * Calculates Surface Peak Ground Velocity (PGV_surface, in cm/s) given site ARV.
+ * The model defines ARV as the amplification relative to engineering bedrock, and the published
+ * relation is ARV = 10^(1.83 - 0.66 log10(AVS30)).
  */
 export function calculateSurfacePgv(bedrockPgv: number, arv: number): number {
   return bedrockPgv * Math.max(0.1, arv);
@@ -80,13 +115,14 @@ export function quantizeJmaIntensity(continuousIntensity: number): JmaIntensityS
  * Full helper function to calculate discrete JMA intensity directly from parameters.
  */
 export function calculateJmaIntensity(
-  R: number,
-  D: number,
+  faultDistanceKm: number,
+  faultDepthKm: number,
   Mw: number,
   arv: number,
-  rSlab: number = 0.0
+  rSlab: number = 0.0,
+  faultType: FaultType = resolveFaultType(rSlab)
 ): { pgvSurface: number; continuousIntensity: number; jmaScale: JmaIntensityScale } {
-  const bedrockPgv = calculateBedrockPgv(R, D, Mw, rSlab);
+  const bedrockPgv = calculateBedrockPgv(faultDistanceKm, faultDepthKm, Mw, rSlab, faultType);
   const pgvSurface = calculateSurfacePgv(bedrockPgv, arv);
   const continuousIntensity = calculateContinuousJmaIntensity(pgvSurface);
   const jmaScale = quantizeJmaIntensity(continuousIntensity);
