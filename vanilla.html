@@ -530,6 +530,7 @@
             };
             engine.init(config);
             eewEngine.reset();
+            triggerEventsMap.clear();
             document.getElementById('eew-banner').style.display = 'none';
             renderLayers();
           }
@@ -813,11 +814,8 @@
       }
 
       // Update trigger events map for Kyoshin mode
-      triggerEventsMap.clear();
-      if (simResult && simResult.newTriggers) {
-        simResult.newTriggers.forEach(ev => {
-          triggerEventsMap.set(ev.stationIndex, ev);
-        });
+      for (const ev of simResult.newTriggers) {
+        triggerEventsMap.set(ev.stationIndex, ev);
       }
 
       updateHud(p, s);
@@ -853,6 +851,7 @@
         config.hypocenter.depth = parseFloat(e.target.value);
         engine.init(config);
         eewEngine.reset();
+        triggerEventsMap.clear();
         document.getElementById('eew-banner').style.display = 'none';
       }
     };
@@ -864,6 +863,7 @@
         config.hypocenter.magnitude = parseFloat(e.target.value);
         engine.init(config);
         eewEngine.reset();
+        triggerEventsMap.clear();
         document.getElementById('eew-banner').style.display = 'none';
       }
     };
