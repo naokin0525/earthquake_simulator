@@ -12,11 +12,11 @@ const BASE_K_ATTENUATION = 0.002; // Standard inelastic attenuation coefficient 
 export type FaultType = 'crustal' | 'interplate' | 'intraplate';
 
 // Deprecated heuristic based solely on rSlab. Use depth-based fault type determination in calculateJmaIntensity.
-+export function resolveFaultType(rSlab: number = 0.0): FaultType {
-+  // Retain backward compatibility: if slab fraction suggests deep slab, treat as intraplate
-+  if (rSlab > 0.5) return 'intraplate';
-+  return 'crustal';
-+}
+export function resolveFaultType(rSlab: number = 0.0): FaultType {
+  // Retain backward compatibility: if slab fraction suggests deep slab, treat as intraplate
+  if (rSlab > 0.5) return 'intraplate';
+  return 'crustal';
+}
 
 export function calculateArvFromVs30(avs30: number): number {
   const safeAvs30 = Math.max(1e-6, avs30);

@@ -35,8 +35,8 @@ export const ControlPanel: React.FC = () => {
         <button
           onClick={toggleMeshVisible}
           className={`flex items-center space-x-1 text-xs px-2.5 py-1.5 rounded-lg border transition-all ${isMeshVisible
-              ? 'bg-cyan-600/80 border-cyan-400 text-white shadow-lg'
-              : 'bg-slate-800/60 border-slate-600 text-slate-300 hover:bg-slate-700'
+            ? 'bg-cyan-600/80 border-cyan-400 text-white shadow-lg'
+            : 'bg-slate-800/60 border-slate-600 text-slate-300 hover:bg-slate-700'
             }`}
           title="推計震度分布図 (250mメッシュ) の表示切り替え"
         >
@@ -46,13 +46,13 @@ export const ControlPanel: React.FC = () => {
         <button
           onClick={toggleKyoshinMonitor}
           className={`flex items-center space-x-1 text-xs px-2.5 py-1.5 rounded-lg border transition-all ${isKyoshinMonitor
-              ? 'bg-emerald-600/80 border-emerald-400 text-white shadow-lg'
-              : 'bg-slate-800/60 border-slate-600 text-slate-300 hover:bg-slate-700'
+            ? 'bg-emerald-600/80 border-emerald-400 text-white shadow-lg'
+            : 'bg-slate-800/60 border-slate-600 text-slate-300 hover:bg-slate-700'
             }`}
-          title="京振モニタースタイル"
+          title="強震モニタースタイル"
         >
           <Eye className="w-3.5 h-3.5" />
-          <span>京振モニター</span>
+          <span>強震モニター</span>
         </button>
       </div>
 
@@ -94,8 +94,8 @@ export const ControlPanel: React.FC = () => {
               key={speed}
               onClick={() => setTimeScale(speed)}
               className={`py-1 text-xs font-semibold rounded-lg transition-all ${timeScale === speed
-                  ? 'bg-cyan-500 text-slate-950 font-bold shadow'
-                  : 'bg-slate-800/60 text-slate-300 hover:bg-slate-700'
+                ? 'bg-cyan-500 text-slate-950 font-bold shadow'
+                : 'bg-slate-800/60 text-slate-300 hover:bg-slate-700'
                 }`}
             >
               {speed}x
