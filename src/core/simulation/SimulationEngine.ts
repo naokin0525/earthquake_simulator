@@ -13,7 +13,7 @@ import {
   StationState,
   StationTriggerEvent
 } from '../types';
-import { computeTravelTimes } from '../physics/travelTime';
+import { computeTravelTimes, haversineDistance, hypocentralDistance } from '../physics/travelTime';
 import { calculateJmaIntensity } from '../physics/attenuation';
 import { calculateSlabFraction } from '../physics/slabModel';
 
@@ -75,17 +75,12 @@ export class SimulationEngine {
       const rSlab = calculateSlabFraction(hypo.lat, hypo.lon, hypo.depth, stLat, stLon);
       this.slabFractions[i] = rSlab;
 
-      // Approximate local planar distance in km from hypocenter. The 111.0 factor converts
-      // longitude degrees to kilometers by latitude scale, and cos(lat) compensates for the
-      // shrinking east-west distance toward higher latitudes.
-      const epiDist = Math.sqrt(
-        Math.pow((stLat - hypo.lat) * 111.0, 2) +
-        Math.pow((stLon - hypo.lon) * 111.0 * Math.cos(stLat * Math.PI / 180.0), 2)
-      );
+      // Compute epicentral distance using haversine formula for accuracy.
+      const epiDist = haversineDistance(stLat, stLon, hypo.lat, hypo.lon);
 
-      // Hypocentral distance in 3D space: sqrt(epicentral² + depth²). We need the full 3D distance
-      // for velocity and ground-motion calculations because depth matters as much as horizontal offset.
-      const R = Math.sqrt(epiDist * epiDist + hypo.depth * hypo.depth);
+      // Compute full hypocentral distance in 3D space.
+      const R = hypocentralDistance(epiDist, hypo.depth);
+
       this.hypocentralDists[i] = R;
       this.pArrivalTimes[i] = R / 6.0; // P-wave 6.0 km/s
       this.sArrivalTimes[i] = R / 3.5; // S-wave 3.5 km/s
@@ -149,11 +144,10 @@ export class SimulationEngine {
     const hypo = this.config.hypocenter;
     const elapsedTime = Math.max(0.0, this.simTime);
 
-    // The visual wave-front radii are treated as simple distance = velocity * time approximations.
-    // This is intentionally a coarse model for rendering and does not replace the physical arrival-time
-    // calculations used for trigger detection.
-    const pWaveRadiusKm = 6.0 * elapsedTime;
-    const sWaveRadiusKm = 3.5 * elapsedTime;
+    // The visual wave-front radii are projected onto the surface, accounting for hypocenter depth.
+    // This avoids the unrealistic situation where the surface radius exceeds the distance that the wave could have traveled.
+    const pWaveRadiusKm = Math.max(0, Math.sqrt(Math.max(0, Math.pow(6.0 * elapsedTime, 2) - Math.pow(hypo.depth, 2))));
+    const sWaveRadiusKm = Math.max(0, Math.sqrt(Math.max(0, Math.pow(3.5 * elapsedTime, 2) - Math.pow(hypo.depth, 2))));
 
     const N = this.stations.totalStations;
     const newTriggers: StationTriggerEvent[] = [];

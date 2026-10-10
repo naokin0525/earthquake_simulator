@@ -493,29 +493,7 @@
         }
       }
 
-      // Integrate ARV Tiles for stations
-      for (let i = 0; i < stations.totalStations; i++) {
-        try {
-          const { x, y, px, py } = ArvResolver.getTileCoordinates(stations.lats[i], stations.lons[i], 10);
-          const tileUrl = `./tiles/mesh/${10}/${x}/${y}.png`;
-          const sampledArv = await ArvResolver.sampleArvFromTile(tileUrl, px, py);
-          stations.ampFactors[i] = sampledArv;
-        } catch (e) {
-          // Fallback to binary data ampFactor if tile loading fails
-        }
-      }
-
-      // Integrate ARV Tiles for prefecture centroids
-      for (const [code, pref] of Object.entries(PREFECTURE_CENTROIDS)) {
-        try {
-          const { x, y, px, py } = ArvResolver.getTileCoordinates(pref.lat, pref.lon, 10);
-          const tileUrl = `./tiles/mesh/${10}/${x}/${y}.png`;
-          const sampledArv = await ArvResolver.sampleArvFromTile(tileUrl, px, py);
-          eewEngine.setPrefectureArv(code, sampledArv);
-        } catch (e) {
-          // Fallback to pref.defaultArv in EEWEngine
-        }
-      }
+      // ARV tile integration disabled. Using default ARV values from data sources.
 
       engine = new SimulationEngine(stations);
       initDeck();

@@ -11,10 +11,12 @@ const BASE_K_ATTENUATION = 0.002; // Standard inelastic attenuation coefficient 
 
 export type FaultType = 'crustal' | 'interplate' | 'intraplate';
 
-export function resolveFaultType(rSlab: number = 0.0): FaultType {
-  if (rSlab > 0.5) return 'intraplate';
-  return 'crustal';
-}
+// Deprecated heuristic based solely on rSlab. Use depth-based fault type determination in calculateJmaIntensity.
++export function resolveFaultType(rSlab: number = 0.0): FaultType {
++  // Retain backward compatibility: if slab fraction suggests deep slab, treat as intraplate
++  if (rSlab > 0.5) return 'intraplate';
++  return 'crustal';
++}
 
 export function calculateArvFromVs30(avs30: number): number {
   const safeAvs30 = Math.max(1e-6, avs30);
@@ -82,7 +84,7 @@ export function calculateBedrockPgv(
  * relation is ARV = 10^(1.83 - 0.66 log10(AVS30)).
  */
 export function calculateSurfacePgv(bedrockPgv: number, arv: number): number {
-  return bedrockPgv * Math.max(0.1, arv);
+  return bedrockPgv * Math.max(0.5, arv);
 }
 
 /**
@@ -122,7 +124,12 @@ export function calculateJmaIntensity(
   rSlab: number = 0.0,
   faultType: FaultType = resolveFaultType(rSlab)
 ): { pgvSurface: number; continuousIntensity: number; jmaScale: JmaIntensityScale } {
-  const bedrockPgv = calculateBedrockPgv(faultDistanceKm, faultDepthKm, Mw, rSlab, faultType);
+  // Determine fault type based on depth heuristic (crustal <30km, interplate 30-60km, intraplate >60km)
+  const depthBasedFaultType: FaultType =
+    faultDepthKm < 30 ? 'crustal' :
+    faultDepthKm < 60 ? 'interplate' :
+    'intraplate';
+  const bedrockPgv = calculateBedrockPgv(faultDistanceKm, faultDepthKm, Mw, rSlab, depthBasedFaultType);
   const pgvSurface = calculateSurfacePgv(bedrockPgv, arv);
   const continuousIntensity = calculateContinuousJmaIntensity(pgvSurface);
   const jmaScale = quantizeJmaIntensity(continuousIntensity);
