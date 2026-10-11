@@ -7,6 +7,7 @@
 
 import {
   EarthquakeHypocenter,
+  IntensityUpdate,
   SimulationConfig,
   SimulationTickState,
   StationDataBuffer,
@@ -14,7 +15,7 @@ import {
   StationTriggerEvent
 } from '../types';
 import { computeTravelTimes, haversineDistance, hypocentralDistance } from '../physics/travelTime';
-import { calculateJmaIntensity } from '../physics/attenuation';
+import { calculateJmaIntensity, calculateContinuousJmaIntensity, envelope } from '../physics/attenuation';
 import { calculateSlabFraction } from '../physics/slabModel';
 
 function generateGaussianNoise(stdDev: number): number {
@@ -151,6 +152,7 @@ export class SimulationEngine {
 
     const N = this.stations.totalStations;
     const newTriggers: StationTriggerEvent[] = [];
+    const intensityUpdates: IntensityUpdate[] = [];
 
     for (let i = 0; i < N; i++) {
       const currentState = this.stationStates[i];
@@ -207,6 +209,8 @@ export class SimulationEngine {
           rSlab
         );
 
+        this.measuredPgvs[i] = pgvSurface;
+
         // Reuse same placeholder conversion for acceleration (not used for S_ARRIVED events)
         const accelerationGal = pgvSurface * 10;
 
@@ -222,6 +226,17 @@ export class SimulationEngine {
           accelerationGal
         });
       }
+
+      if (this.stationStates[i] >= StationState.P_TRIGGERED) {
+        const peakPgv = this.measuredPgvs[i];
+        const instPgv = envelope(this.simTime, pObs, sArr, hypo.magnitude, peakPgv);
+        const continuousIntensity = calculateContinuousJmaIntensity(instPgv);
+        intensityUpdates.push({
+          stationIndex: i,
+          continuousIntensity,
+          pgvSurface: instPgv
+        });
+      }
     }
 
     return {
@@ -229,6 +244,7 @@ export class SimulationEngine {
       pWaveRadiusKm,
       sWaveRadiusKm,
       newTriggers,
+      intensityUpdates,
       currentEEWReport: null
     };
   }

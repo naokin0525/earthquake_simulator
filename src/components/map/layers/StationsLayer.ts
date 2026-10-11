@@ -15,6 +15,7 @@ export interface StationLayerProps {
   stationStates: Uint8Array;
   triggerEventsMap?: Map<number, StationTriggerEvent>;
   kyoshinMonitor?: boolean;
+  mapVersion?: number;
   onHover?: (info: any) => void;
 }
 
@@ -161,7 +162,7 @@ function getKyoshinColor(val: number): [number, number, number, 255] {
 }
 
 export function createStationsLayer(props: StationLayerProps): ScatterplotLayer {
-  const { stationBuffer, stationStates, triggerEventsMap, onHover, kyoshinMonitor, id = 'stations-layer' } = props;
+  const { stationBuffer, stationStates, triggerEventsMap, onHover, kyoshinMonitor, mapVersion, id = 'stations-layer' } = props;
 
   // Build station data items
   const data = new Array(stationBuffer.totalStations);
@@ -231,7 +232,7 @@ export function createStationsLayer(props: StationLayerProps): ScatterplotLayer 
     pickable: true,
     onHover,
     updateTriggers: {
-      getFillColor: [stationStates, triggerEventsMap, kyoshinMonitor, Date.now()],
+      getFillColor: [stationStates, triggerEventsMap, kyoshinMonitor, mapVersion, Date.now()],
       getLineColor: [stationStates, kyoshinMonitor],
       getRadius: [stationStates, kyoshinMonitor, Date.now()],
       getLineWidth: [stationStates]

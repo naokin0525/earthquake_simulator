@@ -43,6 +43,7 @@ export const MapContainer: React.FC = () => {
     eewReport,
     isKyoshinMonitor,
     isMeshVisible,
+    mapVersion,
     setHypocenter
   } = useSimulation();
 
@@ -135,6 +136,7 @@ export const MapContainer: React.FC = () => {
           stationStates,
           triggerEventsMap,
           kyoshinMonitor: isKyoshinMonitor,
+          mapVersion
         })
       );
     }
@@ -156,7 +158,8 @@ export const MapContainer: React.FC = () => {
     sRadiusKm,
     eewReport,
     isKyoshinMonitor,
-    isMeshVisible
+    isMeshVisible,
+    mapVersion
   ]);
 
   return (

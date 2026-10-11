@@ -39,11 +39,11 @@ describe('SimulationEngine State Machine & Wave Propagation', () => {
     // P arrival = 10km / 6.0km/s = ~1.67s
     // S arrival = 10km / 3.5km/s = ~2.86s
 
-    // Tick at t=0.5s: station 0 still IDLE
+    // Tick at t=0.5s: station 0 still IDLE (wave has not reached surface yet)
     let tick = engine.update(0.5);
     expect(tick.simTime).toBe(0.5);
-    expect(tick.pWaveRadiusKm).toBeCloseTo(3.0, 1);
-    expect(tick.sWaveRadiusKm).toBeCloseTo(1.75, 1);
+    expect(tick.pWaveRadiusKm).toBeCloseTo(0.0, 1);
+    expect(tick.sWaveRadiusKm).toBeCloseTo(0.0, 1);
     expect(engine.getStationStates()[0]).toBe(StationState.IDLE);
 
     // Tick at t=2.0s: station 0 P-wave triggered!
@@ -70,6 +70,6 @@ describe('SimulationEngine State Machine & Wave Propagation', () => {
 
     const tick = engine.update(1.0); // 1s wall time * 5x speed = 5.0s sim time
     expect(tick.simTime).toBe(5.0);
-    expect(tick.pWaveRadiusKm).toBeCloseTo(30.0, 1);
+    expect(tick.pWaveRadiusKm).toBeCloseTo(28.28, 1);
   });
 });

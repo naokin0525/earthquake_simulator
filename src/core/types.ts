@@ -97,11 +97,18 @@ export interface StationDataBuffer {
   prefCodes: Uint8Array;
 }
 
+export interface IntensityUpdate {
+  stationIndex: number;
+  continuousIntensity: number;
+  pgvSurface: number;
+}
+
 export interface SimulationTickState {
   simTime: number;               // Current elapsed simulation time in seconds
   pWaveRadiusKm: number;         // Current P-wave front radius in km
   sWaveRadiusKm: number;         // Current S-wave front radius in km
   newTriggers: StationTriggerEvent[]; // Stations that updated state in this tick
+  intensityUpdates?: IntensityUpdate[]; // Per-tick continuous intensity updates for active stations
   currentEEWReport: EEWReport | null; // Latest EEW report if generated/updated
 }
 

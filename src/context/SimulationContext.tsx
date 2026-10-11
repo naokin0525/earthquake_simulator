@@ -45,6 +45,7 @@ interface SimulationContextValue {
   fps: number;
   isMuted: boolean;
   isKyoshinMonitor: boolean;
+  mapVersion: number;
 
   // Actions
   setHypocenter: (lat: number, lon: number) => void;
@@ -78,7 +79,8 @@ export const SimulationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   const [lpgmReport, setLpgmReport] = useState<LPGMReport | null>(null);
   const [milestones, setMilestones] = useState<SimulationMilestone[]>([]);
   const [isMeshVisible, setIsMeshVisible] = useState(false);
-const [isKyoshinMonitor, setIsKyoshinMonitor] = useState(false);
+  const [isKyoshinMonitor, setIsKyoshinMonitor] = useState(false);
+  const [mapVersion, setMapVersion] = useState(0);
   const [fps, setFps] = useState(60);
   const [isMuted, setIsMuted] = useState(audioAlertSystem.getMuted());
 
@@ -123,6 +125,23 @@ const [isKyoshinMonitor, setIsKyoshinMonitor] = useState(false);
         for (const ev of tick.newTriggers) {
           stationStatesRef.current[ev.stationIndex] = ev.state;
           triggerEventsMapRef.current.set(ev.stationIndex, ev);
+        }
+
+        if (tick.intensityUpdates) {
+          for (const u of tick.intensityUpdates) {
+            const prev = triggerEventsMapRef.current.get(u.stationIndex);
+            if (prev) {
+              triggerEventsMapRef.current.set(u.stationIndex, {
+                ...prev,
+                continuousIntensity: u.continuousIntensity,
+                pgvSurface: u.pgvSurface
+              });
+            }
+          }
+        }
+
+        if (tick.newTriggers.length > 0 || (tick.intensityUpdates && tick.intensityUpdates.length > 0)) {
+          setMapVersion((v) => v + 1);
         }
 
         if (tick.currentEEWReport) {
@@ -293,6 +312,7 @@ const [isKyoshinMonitor, setIsKyoshinMonitor] = useState(false);
         fps,
         isMuted,
         isKyoshinMonitor,
+        mapVersion,
         toggleKyoshinMonitor,
         setHypocenter,
         setDepth,

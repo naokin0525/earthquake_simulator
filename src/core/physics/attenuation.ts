@@ -87,14 +87,33 @@ export function calculateSurfacePgv(bedrockPgv: number, arv: number): number {
   return bedrockPgv * Math.max(0.5, arv);
 }
 
+const TAU_BASE = 4.0; // Base coda decay time constant (seconds)
+
+/**
+ * Calculates temporal envelope multiplier for PGV wave propagation and coda decay.
+ * P phase: ~15% of peak, ramping linearly from P arrival to S arrival
+ * S phase: smooth rise to peak, followed by exponential coda decay
+ */
+export function envelope(t: number, pObs: number, sArr: number, Mw: number, peakPgv: number): number {
+  if (t < pObs) return 0;
+  const rise = Math.max(0.5, sArr - pObs);
+  if (t < sArr) return peakPgv * 0.15 * ((t - pObs) / rise);
+  const tPeak = sArr + 2.5;
+  const tau = TAU_BASE + Mw * 1.5; // Bigger quakes ring longer
+  if (t < tPeak) {
+    const x = (t - sArr) / (tPeak - sArr);
+    return peakPgv * (0.15 + 0.85 * x * x);
+  }
+  return peakPgv * Math.exp(-(t - tPeak) / tau);
+}
+
 /**
  * Converts surface PGV (cm/s) to continuous JMA Seismic Intensity scale (I).
  * Formula: I = 2.68 + 1.72 * log10(PGV_surface)
  */
 export function calculateContinuousJmaIntensity(pgvSurface: number): number {
-  if (pgvSurface <= 1e-6) return 0.0;
-  const intensity = 2.68 + 1.72 * Math.log10(pgvSurface);
-  return Math.max(0.0, intensity);
+  if (pgvSurface <= 1e-6) return -3.0;
+  return 2.68 + 1.72 * Math.log10(pgvSurface);
 }
 
 /**
