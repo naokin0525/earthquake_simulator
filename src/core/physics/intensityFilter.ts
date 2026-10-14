@@ -85,8 +85,11 @@ export function getJmaCompositeFilter(f: number): number {
   if (f <= 0.0) return 0.0;
 
   const u = Math.pow(f / 0.5, 3);
-  // For small u, 1 - exp(-u) = u - u^2/2, so (1 - exp(-u))/f = f^2 / 0.125 = 8 * f^2
-  const flOverF = u < 1e-4 ? Math.sqrt(8.0) * f : Math.sqrt((1.0 - Math.exp(-u)) / f);
+  // Periodic effect filter: sqrt(1/f)
+  const periodic = Math.sqrt(1.0 / f);
+  // Low‑cut filter factor: (1 - exp(-u))
+  const lowCut = 1.0 - Math.exp(-u);
+  const flOverF = periodic * lowCut;
   const fh = getHighCutFilter(f);
 
   return flOverF * fh;

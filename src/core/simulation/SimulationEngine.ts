@@ -17,6 +17,7 @@ import {
 import { computeTravelTimes, haversineDistance, hypocentralDistance } from '../physics/travelTime';
 import { calculateJmaIntensity, calculateContinuousJmaIntensity, envelope } from '../physics/attenuation';
 import { calculateSlabFraction } from '../physics/slabModel';
+import { closestFaultDistance } from '../physics/distance';
 
 function generateGaussianNoise(stdDev: number): number {
   const u1 = Math.max(1e-10, Math.random());
@@ -163,12 +164,14 @@ export class SimulationEngine {
         // P-wave trigger: a station transitions from silent to activated once the modeled arrival time is reached.
         this.stationStates[i] = StationState.P_TRIGGERED;
 
+        const stLat = this.stations.lats[i];
+        const stLon = this.stations.lons[i];
         const R = this.hypocentralDists[i];
         const arv = this.stations.ampFactors[i];
         const rSlab = this.slabFractions[i];
-
+        const faultDist = closestFaultDistance(stLat, stLon, hypo.lat, hypo.lon);
         const { pgvSurface, continuousIntensity, jmaScale } = calculateJmaIntensity(
-          R,
+          faultDist,
           hypo.depth,
           hypo.magnitude,
           arv,
@@ -202,9 +205,13 @@ export class SimulationEngine {
         const R = this.hypocentralDists[i];
         const arv = this.stations.ampFactors[i];
         const rSlab = this.slabFractions[i];
+        // Compute distance to fault plane for S‑wave trigger (same as P‑wave)
+        const stLat = this.stations.lats[i];
+        const stLon = this.stations.lons[i];
+        const faultDist = closestFaultDistance(stLat, stLon, hypo.lat, hypo.lon);
 
         const { pgvSurface, continuousIntensity, jmaScale } = calculateJmaIntensity(
-          R,
+          faultDist,
           hypo.depth,
           hypo.magnitude,
           arv,
