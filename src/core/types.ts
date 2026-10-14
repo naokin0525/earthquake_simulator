@@ -59,8 +59,12 @@ export interface StationTriggerEvent {
   pArrivalTime: number;       // Theoretical or noisy P arrival time
   sArrivalTime: number;       // Theoretical S arrival time
   pgvSurface: number;         // Computed peak ground velocity at surface (cm/s)
-  intensity: JmaIntensityScale; // Discrete JMA intensity level
-  continuousIntensity: number; // Continuous floating point JMA intensity
+  intensity: JmaIntensityScale; // Predicted discrete JMA intensity level (backward compatible)
+  continuousIntensity: number; // Predicted continuous floating point JMA intensity (backward compatible)
+  predictedIntensity?: JmaIntensityScale; // Explicit predicted intensity from attenuation model
+  predictedContinuousIntensity?: number; // Explicit predicted continuous intensity from attenuation model
+  instrumentalIntensity?: number; // Instrumental seismic intensity from acceleration waveform (undefined if no waveform exists)
+  instrumentalIntensityScale?: JmaIntensityScale; // Discrete JMA scale from instrumental intensity (undefined if no waveform exists)
   accelerationGal?: number; // Acceleration amplitude in gal (optional, for forecast condition)
 }
 
@@ -99,8 +103,10 @@ export interface StationDataBuffer {
 
 export interface IntensityUpdate {
   stationIndex: number;
-  continuousIntensity: number;
+  continuousIntensity: number; // Continuous predicted intensity from attenuation model (backward compatible)
   pgvSurface: number;
+  predictedContinuousIntensity?: number;
+  instrumentalIntensity?: number; // Present only when acceleration waveform exists and instrumental intensity is calculated
 }
 
 export interface SimulationTickState {

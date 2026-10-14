@@ -28,3 +28,4 @@ Thumbs.db
 public/data/stations/stations.bin
 data_references/*
 public/*
+raw/

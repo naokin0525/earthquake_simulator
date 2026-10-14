@@ -190,6 +190,8 @@ export class SimulationEngine {
           pgvSurface,
           intensity: jmaScale,
           continuousIntensity,
+          predictedIntensity: jmaScale,
+          predictedContinuousIntensity: continuousIntensity,
           accelerationGal
         });
       } else if (currentState === StationState.P_TRIGGERED && this.simTime >= sArr) {
@@ -223,6 +225,8 @@ export class SimulationEngine {
           pgvSurface,
           intensity: jmaScale,
           continuousIntensity,
+          predictedIntensity: jmaScale,
+          predictedContinuousIntensity: continuousIntensity,
           accelerationGal
         });
       }
@@ -234,6 +238,7 @@ export class SimulationEngine {
         intensityUpdates.push({
           stationIndex: i,
           continuousIntensity,
+          predictedContinuousIntensity: continuousIntensity,
           pgvSurface: instPgv
         });
       }
