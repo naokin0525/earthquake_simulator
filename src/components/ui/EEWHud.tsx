@@ -62,13 +62,13 @@ export const EEWHud: React.FC = () => {
             display: 'block',
             color: '#fff',
             fontWeight: 'bold',
-            background: eewReport.type === 'WARNING' ? 'rgba(220, 38, 38, 0.6)' : 'rgba(220, 38, 38, 0.3)',
+            background: eewReport.isWarning ? 'rgba(220, 38, 38, 0.6)' : 'rgba(220, 38, 38, 0.3)',
             padding: '8px',
             borderRadius: '8px',
-            border: `1px solid ${eewReport.type === 'WARNING' ? 'rgba(255, 0, 0, 1)' : 'rgba(220, 38, 38, 0.7)'}`,
+            border: `1px solid ${eewReport.isWarning ? 'rgba(255, 0, 0, 1)' : 'rgba(220, 38, 38, 0.7)'}`,
             textAlign: 'center',
             fontSize: '13px',
-            boxShadow: eewReport.type === 'WARNING' ? '0 0 15px rgba(220, 38, 38, 0.8)' : 'none',
+            boxShadow: eewReport.isWarning ? '0 0 15px rgba(220, 38, 38, 0.8)' : 'none',
           }}
         >
           {eewReport.isWarning ? '警報' : '予報'} EEW 第{eewReport.reportNumber}報{eewReport.isFinal ? ' [最終報]' : ''}
