@@ -19,9 +19,9 @@ export const EEWBanner: React.FC = () => {
   const finalTag = eewReport.isFinal ? ' [最終報]' : '';
 
   // Determine background based on warning type (same logic as original JS)
-  const bg = eewReport.type === 'WARNING' ? 'rgba(220, 38, 38, 0.6)' : 'rgba(220, 38, 38, 0.3)';
-  const border = eewReport.type === 'WARNING' ? 'rgba(255, 0, 0, 1)' : 'rgba(220, 38, 38, 0.7)';
-  const shadow = eewReport.type === 'WARNING' ? '0 0 15px rgba(220, 38, 38, 0.8)' : 'none';
+  const bg = eewReport.isWarning ? 'rgba(220, 38, 38, 0.6)' : 'rgba(220, 38, 38, 0.3)';
+  const border = eewReport.isWarning ? 'rgba(255, 0, 0, 1)' : 'rgba(220, 38, 38, 0.7)';
+  const shadow = eewReport.isWarning ? '0 0 15px rgba(220, 38, 38, 0.8)' : 'none';
 
   return (
     <div
