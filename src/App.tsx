@@ -12,6 +12,7 @@ import { EEWBanner } from './components/ui/EEWBanner';
 import { ControlPanel } from './components/ui/ControlPanel';
 import { EEWHud } from './components/ui/EEWHud';
 import { Legend } from './components/ui/Legend';
+import { JmaTimeline } from './components/ui/JmaTimeline';
 
 export const App: React.FC = () => {
   return (
@@ -23,8 +24,9 @@ export const App: React.FC = () => {
         {/* Floating UI Overlay Components */}
         <div className="absolute inset-0 pointer-events-none z-10">
           <EEWBanner />
-          <ControlPanel />
+          <JmaTimeline />
           <EEWHud />
+          <ControlPanel />
           <Legend />
         </div>
       </div>
