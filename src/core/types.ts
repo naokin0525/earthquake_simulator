@@ -99,6 +99,7 @@ export interface StationDataBuffer {
   lons: Float32Array;
   ampFactors: Float32Array;
   prefCodes: Uint8Array;
+  dailyNoise?: Float32Array;
 }
 
 export interface IntensityUpdate {

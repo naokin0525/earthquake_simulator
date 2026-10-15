@@ -4,7 +4,7 @@
  * Deck.gl layer rendering true and EEW estimated epicenters with pulsing crosshairs.
  */
 
-import { ScatterplotLayer } from '@deck.gl/layers';
+import { IconLayer, ScatterplotLayer } from '@deck.gl/layers';
 import { EEWReport, EarthquakeHypocenter } from '../../../core/types';
 
 export interface HypocenterLayerProps {
@@ -19,18 +19,18 @@ export function createHypocenterLayers(props: HypocenterLayerProps) {
 
   // 1. True Hypocenter Marker
   layers.push(
-    new ScatterplotLayer({
+    new IconLayer({
       id: `${id}-true-center`,
       data: [{ position: [trueHypocenter.lon, trueHypocenter.lat] }],
       getPosition: (d: any) => d.position,
-      getFillColor: [255, 8, 68, 240], // Crimson red
-      getLineColor: [255, 255, 255, 255],
-      getRadius: 12000,
-      radiusMinPixels: 8,
-      radiusMaxPixels: 20,
-      lineWidthMinPixels: 2,
-      stroked: true,
-      pickable: true
+      getIcon: () => ({
+        url: '/logo/epicenter.svg',
+        width: 64,
+        height: 64,
+        anchorY: 64
+      }),
+      sizeScale: 1,
+      pickable: false
     })
   );
 

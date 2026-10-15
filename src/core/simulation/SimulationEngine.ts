@@ -39,6 +39,7 @@ export class SimulationEngine {
   private hypocentralDists: Float32Array = new Float32Array(0);
   private slabFractions: Float32Array = new Float32Array(0);
   private stationStates: Uint8Array = new Uint8Array(0);
+  private dailyNoise: Float32Array = new Float32Array(0);
   private measuredPgvs: Float32Array = new Float32Array(0);
 
   constructor(stations: StationDataBuffer) {
@@ -63,6 +64,7 @@ export class SimulationEngine {
     this.hypocentralDists = new Float32Array(N);
     this.slabFractions = new Float32Array(N);
     this.stationStates = new Uint8Array(N); // 0 = IDLE
+    this.dailyNoise = this.stations.dailyNoise?.length ? this.stations.dailyNoise : new Float32Array(N);
     this.measuredPgvs = new Float32Array(N);
 
     const hypo = config.hypocenter;
@@ -97,6 +99,7 @@ export class SimulationEngine {
     this.simTime = 0.0;
     this.isRunning = false;
     this.stationStates.fill(0);
+    this.measuredPgvs.fill(0);
   }
 
   public setTimeScale(scale: number): void {
@@ -110,6 +113,7 @@ export class SimulationEngine {
     // Reset station states to prevent "instant trigger" jump
     // Stations should only be triggered if simTime >= pObservedTimes[i]
     this.stationStates.fill(0);
+    this.measuredPgvs.fill(0);
 
     // Re-evaluate all stations for the new seek time
     const N = this.stations.totalStations;
@@ -178,11 +182,11 @@ export class SimulationEngine {
           rSlab
         );
 
-        this.measuredPgvs[i] = pgvSurface;
+        this.measuredPgvs[i] = pgvSurface + (this.dailyNoise[i] ?? 0);
 
         // Placeholder conversion: in a demo model, acceleration is estimated by scaling PGV by 10,
         // which is sufficient for UI-level forecast behavior without implementing a full acceleration model.
-        const accelerationGal = pgvSurface * 10;
+        const accelerationGal = (pgvSurface + (this.dailyNoise[i] ?? 0)) * 10;
 
         newTriggers.push({
           stationIndex: i,
@@ -218,10 +222,10 @@ export class SimulationEngine {
           rSlab
         );
 
-        this.measuredPgvs[i] = pgvSurface;
+        this.measuredPgvs[i] = pgvSurface + (this.dailyNoise[i] ?? 0);
 
         // Reuse same placeholder conversion for acceleration (not used for S_ARRIVED events)
-        const accelerationGal = pgvSurface * 10;
+        const accelerationGal = (pgvSurface + (this.dailyNoise[i] ?? 0)) * 10;
 
         newTriggers.push({
           stationIndex: i,

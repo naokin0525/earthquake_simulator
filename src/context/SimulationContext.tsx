@@ -24,6 +24,8 @@ import {
   shouldPlayEewWarningChime
 } from '../core/simulationState';
 import { StationLoader } from '../loaders/StationLoader';
+import { computeAmpFactorsFromTiles } from '../loaders/AmpFactorTileLoader';
+import { loadDailyNoise } from '../loaders/NoiseLoader';
 import { audioAlertSystem } from '../utils/audioAlert';
 
 interface SimulationContextValue {
@@ -181,14 +183,21 @@ export const SimulationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
 
   useEffect(() => {
     StationLoader.loadStations('/data/stations/stations.bin', '/data/stations/stations_meta.json')
-      .then((dataSet) => {
+      .then(async (dataSet) => {
+        // Initial buffer without ampFactors; we'll compute amplification from tiles.
         const buffer: StationDataBuffer = {
           totalStations: dataSet.totalStations,
           lats: dataSet.lats,
           lons: dataSet.lons,
-          ampFactors: dataSet.ampFactors,
+          ampFactors: new Float32Array(dataSet.totalStations), // placeholder
           prefCodes: dataSet.prefCodes
         };
+        // Compute ARV amplification factors from mesh tiles.
+        const computedAmpFactors = await computeAmpFactorsFromTiles(dataSet.lats, dataSet.lons);
+        buffer.ampFactors = computedAmpFactors;
+        // Load daily‑life noise values (if available).
+        const dailyNoise = await loadDailyNoise(dataSet.totalStations);
+        buffer.dailyNoise = dailyNoise;
 
         setStationBuffer(buffer);
         stationStatesRef.current = new Uint8Array(dataSet.totalStations);
