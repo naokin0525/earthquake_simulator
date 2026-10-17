@@ -11,10 +11,13 @@ export async function computeAmpFactorsFromTiles(
   lons: Float32Array,
   tileBaseUrl: string = '/tiles/mesh',
   tileSize: number = 256,
-  zoom: number = 5
+  zoom: number = 5,
+  fallbackAmpFactors?: Float32Array
 ): Promise<Float32Array> {
   const N = lats.length;
-  const ampFactors = new Float32Array(N);
+  const ampFactors = fallbackAmpFactors?.length === N
+    ? new Float32Array(fallbackAmpFactors)
+    : new Float32Array(N).fill(1);
 
   // Helper to convert lat/lon to tile x,y and pixel offsets.
   const toRad = (deg: number) => (deg * Math.PI) / 180;
@@ -61,7 +64,7 @@ export async function computeAmpFactorsFromTiles(
     const url = `${tileBaseUrl}/${z}/${tx}/${ty}.png`;
     const resp = await fetch(url);
     if (!resp.ok) {
-      // If missing, leave ARV at default (0.5).
+      // Preserve the station dataset's amplification value when a tile is absent.
       return;
     }
     const blob = await resp.blob();

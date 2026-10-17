@@ -13,6 +13,7 @@ import { ControlPanel } from './components/ui/ControlPanel';
 import { EEWHud } from './components/ui/EEWHud';
 import { Legend } from './components/ui/Legend';
 import { JmaTimeline } from './components/ui/JmaTimeline';
+import { StrongMotionMonitor } from './components/ui/StrongMotionMonitor';
 
 export const App: React.FC = () => (
   <SimulationProvider>
@@ -26,6 +27,7 @@ export const App: React.FC = () => (
         <EEWHud />
         <ControlPanel />
         <Legend />
+        <StrongMotionMonitor />
       </div>
     </div>
   </SimulationProvider>

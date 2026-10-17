@@ -17,7 +17,7 @@ import { estimateHypocenterAndMagnitude, TriggeredObservation } from './eewInver
 import { calculateJmaIntensity, isJmaGreaterOrEqual } from '../physics/attenuation';
 import { calculateSlabFraction } from '../physics/slabModel';
 import { estimateLPGM } from '../physics/lpgm'; // Added LPGM estimation
-import { haversineDistance, hypocentralDistance } from '../physics/travelTime';
+import { pointSourceDistance } from '../physics/distance';
 
 // Representative centroid coordinates & default ARV amplification for all 47 prefectures of Japan
 export const PREFECTURE_CENTROIDS: Record<number, { name: string; lat: number; lon: number; defaultArv: number }>
@@ -143,8 +143,7 @@ export class EEWEngine {
        if (!pref) continue;
 
        const rSlab = calculateSlabFraction(estHypo.lat, estHypo.lon, estHypo.depth, pref.lat, pref.lon);
-       const epiDist = haversineDistance(pref.lat, pref.lon, estHypo.lat, estHypo.lon);
-       const dist = hypocentralDistance(epiDist, estHypo.depth);
+       const dist = pointSourceDistance(pref.lat, pref.lon, estHypo.lat, estHypo.lon, estHypo.depth);
 
        const { jmaScale } = calculateJmaIntensity(dist, estHypo.depth, estHypo.magnitude, pref.defaultArv, rSlab);
 
@@ -162,7 +161,7 @@ export class EEWEngine {
          prefCode: code,
          prefName: pref.name,
          maxPredictedIntensity: jmaScale,
-         isWarning: isJmaGreaterOrEqual(jmaScale, '4')
+         isWarning: isJmaGreaterOrEqual(jmaScale, '5-')
        });
      }
 

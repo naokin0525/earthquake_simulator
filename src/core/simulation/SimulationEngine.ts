@@ -14,10 +14,10 @@ import {
   StationState,
   StationTriggerEvent
 } from '../types';
-import { computeTravelTimes, haversineDistance, hypocentralDistance } from '../physics/travelTime';
+import { computeTravelTimes } from '../physics/travelTime';
 import { calculateJmaIntensity, calculateContinuousJmaIntensity, envelope } from '../physics/attenuation';
 import { calculateSlabFraction } from '../physics/slabModel';
-import { closestFaultDistance } from '../physics/distance';
+import { pointSourceDistance } from '../physics/distance';
 
 function generateGaussianNoise(stdDev: number): number {
   const u1 = Math.max(1e-10, Math.random());
@@ -79,15 +79,10 @@ export class SimulationEngine {
       const rSlab = calculateSlabFraction(hypo.lat, hypo.lon, hypo.depth, stLat, stLon);
       this.slabFractions[i] = rSlab;
 
-      // Compute epicentral distance using haversine formula for accuracy.
-      const epiDist = haversineDistance(stLat, stLon, hypo.lat, hypo.lon);
-
-      // Compute full hypocentral distance in 3D space.
-      const R = hypocentralDistance(epiDist, hypo.depth);
-
-      this.hypocentralDists[i] = R;
-      this.pArrivalTimes[i] = R / 6.0; // P-wave 6.0 km/s
-      this.sArrivalTimes[i] = R / 3.5; // S-wave 3.5 km/s
+      const travelTimes = computeTravelTimes(hypo, stLat, stLon, rSlab);
+      this.hypocentralDists[i] = travelTimes.hypocentralDistance;
+      this.pArrivalTimes[i] = travelTimes.pArrivalTime;
+      this.sArrivalTimes[i] = travelTimes.sArrivalTime;
 
       // Add a small Gaussian pick error to mimic real station arrival-time picking variability.
       const noise = generateGaussianNoise(noiseStdDev);
@@ -170,10 +165,9 @@ export class SimulationEngine {
 
         const stLat = this.stations.lats[i];
         const stLon = this.stations.lons[i];
-        const R = this.hypocentralDists[i];
         const arv = this.stations.ampFactors[i];
         const rSlab = this.slabFractions[i];
-        const faultDist = closestFaultDistance(stLat, stLon, hypo.lat, hypo.lon);
+        const faultDist = pointSourceDistance(stLat, stLon, hypo.lat, hypo.lon, hypo.depth);
         const { pgvSurface, continuousIntensity, jmaScale } = calculateJmaIntensity(
           faultDist,
           hypo.depth,
@@ -206,13 +200,12 @@ export class SimulationEngine {
         // correlates with stronger shaking and more severe EEW intensity estimates.
         this.stationStates[i] = StationState.S_ARRIVED;
 
-        const R = this.hypocentralDists[i];
         const arv = this.stations.ampFactors[i];
         const rSlab = this.slabFractions[i];
         // Compute distance to fault plane for S‑wave trigger (same as P‑wave)
         const stLat = this.stations.lats[i];
         const stLon = this.stations.lons[i];
-        const faultDist = closestFaultDistance(stLat, stLon, hypo.lat, hypo.lon);
+        const faultDist = pointSourceDistance(stLat, stLon, hypo.lat, hypo.lon, hypo.depth);
 
         const { pgvSurface, continuousIntensity, jmaScale } = calculateJmaIntensity(
           faultDist,

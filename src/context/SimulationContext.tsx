@@ -193,7 +193,14 @@ export const SimulationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
           prefCodes: dataSet.prefCodes
         };
         // Compute ARV amplification factors from mesh tiles.
-        const computedAmpFactors = await computeAmpFactorsFromTiles(dataSet.lats, dataSet.lons);
+        const computedAmpFactors = await computeAmpFactorsFromTiles(
+          dataSet.lats,
+          dataSet.lons,
+          undefined,
+          undefined,
+          undefined,
+          dataSet.ampFactors
+        );
         buffer.ampFactors = computedAmpFactors;
         // Load daily‑life noise values (if available).
         const dailyNoise = await loadDailyNoise(dataSet.totalStations);

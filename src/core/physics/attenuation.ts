@@ -41,6 +41,16 @@ export function resolveFaultType(rSlab: number = 0.0): FaultType {
 }
 
 /**
+ * Fallback event classification for the point-source simulator. Production
+ * finite-fault inputs should provide the fault type explicitly instead.
+ */
+export function inferFaultTypeFromDepth(depthKm: number): FaultType {
+  if (depthKm >= 60) return 'intraplate';
+  if (depthKm >= 30) return 'interplate';
+  return 'crustal';
+}
+
+/**
  * Calculates Peak Ground Velocity on engineering bedrock (PGV_600, in cm/s)
  * using the Si & Midorikawa (1999) empirical attenuation model.
  *
@@ -138,11 +148,8 @@ export function calculateJmaIntensity(
   faultType: FaultType = resolveFaultType(rSlab)
 ): { pgvSurface: number; continuousIntensity: number; jmaScale: JmaIntensityScale } {
   // Determine fault type based on depth heuristic (crustal <30km, interplate 30-60km, intraplate >60km)
-  const depthBasedFaultType: FaultType =
-    faultDepthKm < 30 ? 'crustal' :
-    faultDepthKm < 60 ? 'interplate' :
-    'intraplate';
-  const bedrockPgv = calculateBedrockPgv(faultDistanceKm, faultDepthKm, Mw, rSlab, depthBasedFaultType);
+  const resolvedFaultType = faultType ?? inferFaultTypeFromDepth(faultDepthKm);
+  const bedrockPgv = calculateBedrockPgv(faultDistanceKm, faultDepthKm, Mw, rSlab, resolvedFaultType);
   const pgvSurface = calculateSurfacePgv(bedrockPgv, arv);
   const continuousIntensity = calculateContinuousJmaIntensity(pgvSurface);
   const jmaScale = quantizeJmaIntensity(continuousIntensity);

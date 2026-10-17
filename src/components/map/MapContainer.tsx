@@ -178,6 +178,7 @@ export const MapContainer: React.FC = () => {
             setHypocenter(Math.round(info.coordinate[1] * 1000) / 1000, Math.round(info.coordinate[0] * 1000) / 1000);
           }
         }}
+        onHover={setHoverInfo}
       />
 
       {/* Station Hover Tooltip */}
