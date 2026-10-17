@@ -72,6 +72,14 @@ html {
 }
 
 /* Timeline panel */
+
+/* Fixed station tooltip */
+.station-tooltip {
+    position: absolute;
+    bottom: 80px;
+    left: 20px;
+    transform: none !important;
+}
 .timeline-panel {
 	position: absolute;
 	top: 20px;
