@@ -61,7 +61,7 @@ export const MapContainer: React.FC = () => {
       center: [INITIAL_VIEW_STATE.longitude, INITIAL_VIEW_STATE.latitude],
       zoom: INITIAL_VIEW_STATE.zoom,
       attributionControl: false,
-      interactive: false
+      interactive: true
     });
 
     mapRef.current = map;
