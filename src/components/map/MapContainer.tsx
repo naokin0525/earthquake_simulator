@@ -47,6 +47,17 @@ export const MapContainer: React.FC = () => {
     hasEpicenter,
     setHypocenter
   } = useSimulation();
+  const hoveredObject = hoverInfo?.object;
+  const hoveredStationIndex =
+    typeof hoveredObject === 'number' && Number.isInteger(hoveredObject) ? hoveredObject : null;
+  const hasValidStationHover =
+    hoveredStationIndex !== null &&
+    stationBuffer !== null &&
+    hoveredStationIndex >= 0 &&
+    hoveredStationIndex < stationBuffer.totalStations &&
+    hoveredStationIndex < stationBuffer.lats.length &&
+    hoveredStationIndex < stationBuffer.lons.length &&
+    hoveredStationIndex < stationBuffer.ampFactors.length;
 
   // 1. Initialize MapLibre GL
   useEffect(() => {
@@ -185,21 +196,21 @@ export const MapContainer: React.FC = () => {
       />
 
       {/* Station Hover Tooltip */}
-      {hoverInfo && hoverInfo.object !== undefined && (
+      {hasValidStationHover && stationBuffer && hoveredStationIndex !== null && (
         <div
           className="glass-panel station-tooltip z-50 p-10 text-xs text-slate-100 rounded-lg shadow-xl pointer-events-none mb-2"
         >
           {(() => {
-            const index = hoverInfo.object;
+            const index = hoveredStationIndex;
             const meta = stationMetadataMap.get(index);
             const state = stationStates[index] ?? 0;
             const ev = triggerEventsMap.get(index);
 
             const name = meta ? meta.name : `観測点 #${index}`;
             const id = meta ? meta.station_id : '';
-            const lat = stationBuffer?.lats[index].toFixed(3);
-            const lon = stationBuffer?.lons[index].toFixed(3);
-            const arv = stationBuffer?.ampFactors[index].toFixed(2);
+            const lat = stationBuffer.lats[index].toFixed(3);
+            const lon = stationBuffer.lons[index].toFixed(3);
+            const arv = stationBuffer.ampFactors[index].toFixed(2);
 
             let stateText = '平常 (IDLE)';
             if (state === 1) stateText = 'P波検知 (P_TRIGGERED)';
