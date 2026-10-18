@@ -44,6 +44,7 @@ export const MapContainer: React.FC = () => {
     isKyoshinMonitor,
     isMeshVisible,
     mapVersion,
+    hasEpicenter,
     setHypocenter
   } = useSimulation();
 
@@ -143,6 +144,7 @@ export const MapContainer: React.FC = () => {
 
     // Layer 4: Hypocenters (True & EEW Estimated)
     const hypoLayers = createHypocenterLayers({
+      hasEpicenter,
       trueHypocenter: hypocenter,
       eewReport
     });
@@ -159,7 +161,8 @@ export const MapContainer: React.FC = () => {
     eewReport,
     isKyoshinMonitor,
     isMeshVisible,
-    mapVersion
+    mapVersion,
+    hasEpicenter
   ]);
 
   return (

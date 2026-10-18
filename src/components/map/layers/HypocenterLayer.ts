@@ -9,30 +9,32 @@ import { EEWReport, EarthquakeHypocenter } from '../../../core/types';
 
 export interface HypocenterLayerProps {
   id?: string;
+  hasEpicenter: boolean;
   trueHypocenter: EarthquakeHypocenter;
   eewReport?: EEWReport | null;
 }
 
 export function createHypocenterLayers(props: HypocenterLayerProps) {
-  const { trueHypocenter, eewReport, id = 'hypocenter' } = props;
+  const { hasEpicenter, trueHypocenter, eewReport, id = 'hypocenter' } = props;
   const layers: any[] = [];
 
-  // 1. True Hypocenter Marker
-  layers.push(
-    new IconLayer({
-      id: `${id}-true-center`,
-      data: [{ position: [trueHypocenter.lon, trueHypocenter.lat] }],
-      getPosition: (d: any) => d.position,
-      getIcon: () => ({
-        url: '/logo/epicenter.svg',
-        width: 64,
-        height: 64,
-        anchorY: 64
-      }),
-      sizeScale: 1,
-      pickable: false
-    })
-  );
+  if (hasEpicenter) {
+    layers.push(
+      new IconLayer({
+        id: `${id}-true-center`,
+        data: [{ position: [trueHypocenter.lon, trueHypocenter.lat] }],
+        getPosition: (d: any) => d.position,
+        getIcon: () => ({
+          url: '/logo/epicenter.svg',
+          width: 64,
+          height: 64,
+          anchorY: 64
+        }),
+        sizeScale: 1,
+        pickable: false
+      })
+    );
+  }
 
   // 2. EEW Estimated Hypocenter Marker
   if (eewReport && eewReport.estimatedHypocenter) {

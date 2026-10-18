@@ -28,4 +28,6 @@ Thumbs.db
 public/data/stations/stations.bin
 data_references/
 public/*
+!public/logo/
+!public/logo/epicenter.svg
 station_noise/raw/
