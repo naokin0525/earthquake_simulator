@@ -20,6 +20,7 @@ export const ControlPanel: React.FC = () => {
     setDepth,
     setMagnitude,
     setTimeScale,
+    hasEpicenter,
   } = useSimulation();
 
   return (
@@ -57,12 +58,12 @@ export const ControlPanel: React.FC = () => {
       />
 
       {/* Play / Pause */}
-      <button id="play-btn" className="btn" onClick={isPlaying ? pause : play}>
+      <button id="play-btn" className="btn" onClick={isPlaying ? pause : play} disabled={!hasEpicenter}>
         {isPlaying ? '一時停止' : 'シミュレーション開始'}
       </button>
 
       {/* Reset */}
-      <button id="reset-btn" className="btn btn-stop" onClick={reset}>
+      <button id="reset-btn" className="btn btn-stop" onClick={reset} disabled={!hasEpicenter}>
         リセット
       </button>
 
@@ -70,6 +71,11 @@ export const ControlPanel: React.FC = () => {
       <button id="kyoshin-btn" className="btn" onClick={toggleKyoshinMonitor}>
         {isKyoshinMonitor ? 'OFF' : '強震モニター'}
       </button>
+
+      {/* Epicenter required notice */}
+      {!hasEpicenter && (
+        <p className="mt-2 text-sm text-red-500">シミュレーション開始前にマップ上で震源を選択してください。</p>
+      )}
     </div>
   );
 };
