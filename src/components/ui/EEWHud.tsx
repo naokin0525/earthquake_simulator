@@ -6,12 +6,16 @@
 
 import React from 'react';
 import { useSimulation } from '../../hooks/useSimulation';
-import { StationState } from '../../core/types';
+import { JmaIntensityScale, StationState } from '../../core/types';
+
+const INTENSITY_ORDER: JmaIntensityScale[] = ['7', '6+', '6-', '5+', '5-', '4', '3', '2', '1', '0'];
 
 export const EEWHud: React.FC = () => {
   const {
     simTime,
     eewReport,
+    flashReport,
+    lpgmReport,
     stationStates,
     isKyoshinMonitor,
   } = useSimulation();
@@ -75,6 +79,52 @@ export const EEWHud: React.FC = () => {
           <br />
           推定震源: 北緯 {eewReport.estimatedHypocenter.lat}° / 東経 {eewReport.estimatedHypocenter.lon}° (深さ {eewReport.estimatedHypocenter.depth}km, M{eewReport.estimatedHypocenter.magnitude})
         </div>
+      )}
+
+      {flashReport && (
+        <section
+          aria-live="polite"
+          style={{ borderTop: '1px solid rgba(255,255,255,0.1)', marginTop: '12px', paddingTop: '10px' }}
+        >
+          <h4 style={{ color: '#fbbf24', margin: '0 0 6px', fontSize: '13px' }}>震度速報（シミュレーション）</h4>
+          <p style={{ color: '#cbd5e1', fontSize: '11px', margin: '0 0 6px' }}>
+            発表時刻 T+{flashReport.issuedTime.toFixed(1)}秒
+          </p>
+          <p style={{ color: '#e2e8f0', fontSize: '12px', margin: '0 0 8px' }}>{flashReport.summary}</p>
+          <div style={{ display: 'grid', gap: '4px', fontSize: '12px' }}>
+            {INTENSITY_ORDER.flatMap((scale) => {
+              const prefectures = flashReport.intensities[scale];
+              return prefectures?.length
+                ? [(
+                    <div key={scale}>
+                      <strong style={{ color: '#fbbf24' }}>震度{scale}</strong>
+                      <span style={{ color: '#e2e8f0' }}> {prefectures.join('、')}</span>
+                    </div>
+                  )]
+                : [];
+            })}
+          </div>
+        </section>
+      )}
+
+      {lpgmReport && (
+        <section
+          aria-live="polite"
+          style={{ borderTop: '1px solid rgba(255,255,255,0.1)', marginTop: '12px', paddingTop: '10px' }}
+        >
+          <h4 style={{ color: '#c4b5fd', margin: '0 0 6px', fontSize: '13px' }}>長周期地震動（推定）</h4>
+          <p style={{ color: '#cbd5e1', fontSize: '11px', margin: '0 0 6px' }}>
+            発表時刻 T+{lpgmReport.issuedTime.toFixed(1)}秒
+          </p>
+          <div style={{ display: 'grid', gap: '4px', fontSize: '12px' }}>
+            {lpgmReport.affectedPrefectures.map((prefecture) => (
+              <div key={prefecture.prefCode}>
+                <strong style={{ color: '#c4b5fd' }}>階級{prefecture.classLevel}</strong>
+                <span style={{ color: '#e2e8f0' }}> {prefecture.prefName}</span>
+              </div>
+            ))}
+          </div>
+        </section>
       )}
     </div>
   );

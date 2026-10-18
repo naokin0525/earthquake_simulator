@@ -112,7 +112,7 @@ export const MapContainer: React.FC = () => {
         id: 'japan-landmass',
         data: '/data/prefectures.geojson',
         filled: true,
-        getFillColor: [17, 24, 39, 255],
+        getFillColor: [44, 51, 41, 255],
         getLineColor: [255, 255, 255, 200],
         lineWidthMinPixels: 1.5,
       })

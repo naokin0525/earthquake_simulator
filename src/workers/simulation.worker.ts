@@ -68,7 +68,9 @@ function startTickLoop(): void {
       tickState.simTime,
       simulationEngine.getStationStates().filter((s: number) => s !== 0).length,
       tickState.currentEEWReport,
-      simulationEngine?.getConfig()?.hypocenter
+      simulationEngine.getConfig()?.hypocenter,
+      tickState.newTriggers,
+      stationBuffer.prefCodes
     );
 
     if (seqResult.milestone) {
