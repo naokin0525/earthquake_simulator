@@ -48,6 +48,7 @@ interface SimulationContextValue {
   isMuted: boolean;
   isKyoshinMonitor: boolean;
   mapVersion: number;
+  hasEpicenter: boolean;
 
   // Actions
   setHypocenter: (lat: number, lon: number) => void;
@@ -83,6 +84,7 @@ export const SimulationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   const [isMeshVisible, setIsMeshVisible] = useState(false);
   const [isKyoshinMonitor, setIsKyoshinMonitor] = useState(false);
   const [mapVersion, setMapVersion] = useState(0);
+  const [hasEpicenter, setHasEpicenter] = useState(false);
   const [fps, setFps] = useState(60);
   const [isMuted, setIsMuted] = useState(audioAlertSystem.getMuted());
 
@@ -236,6 +238,7 @@ export const SimulationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
 
   const play = useCallback(() => {
     if (!isReady || !workerRef.current) return;
++    if (!hasEpicenter) return;
 
     const config = createSimulationConfig(hypocenter, timeScale);
 
@@ -245,7 +248,7 @@ export const SimulationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       postWorkerAction({ type: 'RESUME' });
     }
     setIsPlaying(true);
-  }, [isReady, isPlaying, simTime, hypocenter, timeScale]);
+  }, [isReady, isPlaying, simTime, hypocenter, timeScale, hasEpicenter]);
 
   const pause = useCallback(() => {
     postWorkerAction({ type: 'PAUSE' });
@@ -253,6 +256,7 @@ export const SimulationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   }, []);
 
   const reset = useCallback(() => {
+    if (!hasEpicenter) return;
     postWorkerAction({ type: 'RESET' });
     setIsPlaying(false);
     setSimTime(0.0);
@@ -263,7 +267,7 @@ export const SimulationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       stationStatesRef.current.fill(0);
     }
     triggerEventsMapRef.current.clear();
-  }, [clearReportState, stationBuffer]);
+  }, [clearReportState, stationBuffer, hasEpicenter]);
 
   const seek = useCallback((time: number) => {
     postWorkerAction({ type: 'SEEK', payload: { time } });
@@ -279,6 +283,7 @@ export const SimulationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   const setHypocenter = useCallback((lat: number, lon: number) => {
     const updated = { ...hypocenter, lat, lon };
     setHypocenterState(updated);
+    setHasEpicenter(true);
     if (isPlaying) {
       reset();
     }
@@ -329,6 +334,7 @@ export const SimulationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         isMuted,
         isKyoshinMonitor,
         mapVersion,
+        hasEpicenter,
         toggleKyoshinMonitor,
         setHypocenter,
         setDepth,
