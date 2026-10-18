@@ -15,6 +15,7 @@ yarn-error.log*
 Thumbs.db
 
 # IDEs
+.claude/
 .vscode/
 .idea/
 
@@ -26,6 +27,6 @@ Thumbs.db
 # Simulation Data (Large binary files)
 # If these should be in Git, remove these lines
 public/data/stations/stations.bin
-data_references/*
+data_references/
 public/*
-raw/
+station_noise/raw/

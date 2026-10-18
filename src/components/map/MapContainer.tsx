@@ -75,7 +75,7 @@ export const MapContainer: React.FC = () => {
         }
         setStationMetadataMap(metaMap);
       })
-      .catch(() => {});
+      .catch(() => { });
 
     // Handle map click to reposition hypocenter
     map.on('click', (e) => {
@@ -184,8 +184,8 @@ export const MapContainer: React.FC = () => {
       {/* Station Hover Tooltip */}
       {hoverInfo && hoverInfo.object !== undefined && (
         <div
-          className="glass-panel station-tooltip z-50 p-3 text-xs text-slate-100 rounded-lg shadow-xl pointer-events-none mb-2"
-                  >
+          className="glass-panel station-tooltip z-50 p-10 text-xs text-slate-100 rounded-lg shadow-xl pointer-events-none mb-2"
+        >
           {(() => {
             const index = hoverInfo.object;
             const meta = stationMetadataMap.get(index);
