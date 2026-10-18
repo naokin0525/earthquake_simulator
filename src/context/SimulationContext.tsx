@@ -238,7 +238,7 @@ export const SimulationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
 
   const play = useCallback(() => {
     if (!isReady || !workerRef.current) return;
-+    if (!hasEpicenter) return;
+    if (!hasEpicenter) return;
 
     const config = createSimulationConfig(hypocenter, timeScale);
 
