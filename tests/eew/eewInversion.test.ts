@@ -8,6 +8,7 @@ import { describe, it, expect } from 'vitest';
 import { estimateHypocenterAndMagnitude, TriggeredObservation } from '../../src/core/eew/eewInversion';
 import { EEWEngine } from '../../src/core/eew/EEWEngine';
 import { haversineDistance } from '../../src/core/physics/travelTime';
+import { calculateBedrockPgv } from '../../src/core/physics/attenuation';
 
 describe('EEW Inversion & Warning Alert Engine', () => {
   const trueHypo = { lat: 35.5, lon: 139.5, depth: 30.0, magnitude: 6.8, originTime: 0.0 };
@@ -59,6 +60,38 @@ describe('EEW Inversion & Warning Alert Engine', () => {
     expect(epicentralErrorKm).toBeLessThan(15.0); // Epicenter error < 15 km
     expect(Math.abs(estHypo.depth - trueHypo.depth)).toBeLessThanOrEqual(40.0);
     expect(estHypo.magnitude).toBeGreaterThan(5.0);
+  });
+
+  it('should recover origin time and magnitude from station picks while limiting a late outlier', () => {
+    const originTime = 12.5;
+    const magnitude = 6.2;
+    const depth = 40;
+    const broadStationCoords = [
+      { lat: 34.7, lon: 138.8 },
+      { lat: 35.1, lon: 140.2 },
+      { lat: 36.1, lon: 138.9 },
+      { lat: 36.3, lon: 140.4 },
+      { lat: 34.8, lon: 140.5 }
+    ];
+    const observations: TriggeredObservation[] = broadStationCoords.map((station, index) => {
+      const distance = Math.sqrt(
+        haversineDistance(trueHypo.lat, trueHypo.lon, station.lat, station.lon) ** 2 + depth ** 2
+      );
+      const ampFactor = 1.5;
+      return {
+        lat: station.lat,
+        lon: station.lon,
+        tObs: originTime + distance / 6 + (index === 4 ? 2.5 : 0),
+        ampFactor,
+        measuredPgv: calculateBedrockPgv(distance, depth, magnitude) * ampFactor
+      };
+    });
+
+    const estimate = estimateHypocenterAndMagnitude(observations);
+
+    expect(Math.abs(estimate.originTime - originTime)).toBeLessThan(1.0);
+    expect(Math.abs(estimate.magnitude - magnitude)).toBeLessThanOrEqual(0.2);
+    expect(haversineDistance(trueHypo.lat, trueHypo.lon, estimate.lat, estimate.lon)).toBeLessThan(15);
   });
 
   it('should issue EEW Warning when predicted intensity is >= 5-', () => {

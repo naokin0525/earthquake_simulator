@@ -9,6 +9,18 @@ import { useSimulation } from '../../hooks/useSimulation';
 import { JmaIntensityScale, StationState } from '../../core/types';
 
 const INTENSITY_ORDER: JmaIntensityScale[] = ['7', '6+', '6-', '5+', '5-', '4', '3', '2', '1', '0'];
+const INTENSITY_LABELS: Record<JmaIntensityScale, string> = {
+  '0': '0',
+  '1': '1',
+  '2': '2',
+  '3': '3',
+  '4': '4',
+  '5-': '5弱',
+  '5+': '5強',
+  '6-': '6弱',
+  '6+': '6強',
+  '7': '7'
+};
 
 export const EEWHud: React.FC = () => {
   const {
@@ -77,7 +89,18 @@ export const EEWHud: React.FC = () => {
         >
           {eewReport.isWarning ? '警報' : '予報'} EEW 第{eewReport.reportNumber}報{eewReport.isFinal ? ' [最終報]' : ''}
           <br />
-          推定震源: 北緯 {eewReport.estimatedHypocenter.lat}° / 東経 {eewReport.estimatedHypocenter.lon}° (深さ {eewReport.estimatedHypocenter.depth}km, M{eewReport.estimatedHypocenter.magnitude})
+          推定震源: 北緯 {eewReport.estimatedHypocenter.lat.toFixed(2)}° / 東経 {eewReport.estimatedHypocenter.lon.toFixed(2)}° (深さ {Math.round(eewReport.estimatedHypocenter.depth)}km, M{eewReport.estimatedHypocenter.magnitude.toFixed(1)})
+          <br />
+          最大予想震度 {INTENSITY_LABELS[eewReport.maxPredictedIntensity]}・検知 {eewReport.triggeredStationCount}地点
+          {eewReport.warnedPrefectures.some((prefecture) => prefecture.isWarning) && (
+            <>
+              <br />
+              警報対象: {eewReport.warnedPrefectures
+                .filter((prefecture) => prefecture.isWarning)
+                .map((prefecture) => prefecture.prefName)
+                .join('、')}
+            </>
+          )}
         </div>
       )}
 
