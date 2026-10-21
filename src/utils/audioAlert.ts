@@ -7,10 +7,11 @@
 export class AudioAlertSystem {
   private ctx: AudioContext | null = null;
   private isMuted: boolean = false;
+  private isSpeechEnabled: boolean = false;
 
   constructor() {
-    // Load mute state from local storage (persisted across sessions)
     this.isMuted = localStorage.getItem('sim_audio_muted') === 'true';
+    this.isSpeechEnabled = localStorage.getItem('sim_speech_enabled') === 'true';
   }
 
   private initCtx() {
@@ -30,6 +31,9 @@ export class AudioAlertSystem {
   public setMute(muted: boolean): void {
     this.isMuted = muted;
     localStorage.setItem('sim_audio_muted', String(muted));
+    if (muted && 'speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
+    }
   }
 
   /**
@@ -37,6 +41,36 @@ export class AudioAlertSystem {
    */
   public getMuted(): boolean {
     return this.isMuted;
+  }
+
+  public setSpeechEnabled(enabled: boolean): void {
+    this.isSpeechEnabled = enabled;
+    localStorage.setItem('sim_speech_enabled', String(enabled));
+    if (!enabled && 'speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
+    }
+  }
+
+  public getSpeechEnabled(): boolean {
+    return this.isSpeechEnabled;
+  }
+
+  public canSpeak(): boolean {
+    return typeof window !== 'undefined' && 'speechSynthesis' in window && 'SpeechSynthesisUtterance' in window;
+  }
+
+  public speak(text: string): void {
+    if (this.isMuted || !this.isSpeechEnabled || !this.canSpeak()) return;
+
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.lang = 'ja-JP';
+    utterance.rate = 1;
+
+    const japaneseVoice = window.speechSynthesis.getVoices().find((voice) => voice.lang.toLowerCase().startsWith('ja'));
+    if (japaneseVoice) utterance.voice = japaneseVoice;
+
+    window.speechSynthesis.cancel();
+    window.speechSynthesis.speak(utterance);
   }
 
   /**

@@ -13,10 +13,13 @@ export const JmaTimeline: React.FC = () => {
     stationStates,
     eewReport,
     flashReport,
+    earthquakeInfoReport,
     lpgmReport,
+    mapDisplayMode,
+    setMapDisplayMode
   } = useSimulation();
 
-  // Count P‑wave detections and S‑wave arrivals.
+  // Count P-wave detections and S-wave arrivals.
   let pCount = 0;
   let sCount = 0;
   for (let i = 0; i < stationStates.length; i++) {
@@ -27,14 +30,14 @@ export const JmaTimeline: React.FC = () => {
 
   // Determine which steps are currently active.
   const stepsActive = [
-    isPlaying, // 0: Origin (simulation running)
-    pCount > 0, // 1: P‑wave detection
-    !!eewReport && eewReport.reportNumber >= 1, // 2: EEW forecast (first report)
-    !!eewReport && eewReport.isWarning, // 3: EEW warning issued
-    sCount > 0, // 4: S‑wave arrival
-    !!flashReport, // 5: Intensity flash report
-    !!eewReport && eewReport.isFinal && eewReport.estimatedHypocenter.magnitude >= 7.0, // 6: Final report (M≥7.0)
-    !!lpgmReport, // 7: Long‑Period Ground Motion (estimated intensity map)
+    isPlaying, // 0: Origin
+    pCount > 0, // 1: P-wave detection
+    !!eewReport && eewReport.reportNumber >= 1, // 2: EEW forecast
+    !!eewReport && eewReport.isWarning, // 3: EEW warning
+    sCount > 0, // 4: S-wave arrival
+    !!flashReport, // 5: Intensity flash report (approx. 1-2 min)
+    !!earthquakeInfoReport, // 6: Detailed earthquake info (approx. 3-5 min)
+    !!lpgmReport, // 7: Long-period ground motion (approx. 10 min)
   ];
 
   // Find the latest active step index – used for styling.
@@ -43,40 +46,84 @@ export const JmaTimeline: React.FC = () => {
     if (active) currentActiveIdx = i;
   });
 
-  const labels = [
-    '1. 地震発生',
-    '2. 揺れの検知 (P波検知)',
-    '3. 緊急地震速報 (予報): M3.5以上、または推定最大震度3以上などで発行',
-    '4. 緊急地震速報 (警報): 2点以上の観測点検知かつ最大震度5弱以上などで発行',
-    '5. 主要動到達 (S波検知)',
-    '6. 震度速報',
-    '7. 地震情報 (M7.0以上で長周期地震動情報を含む)',
-    '8. 推定震度分布図',
+  const stepMeta: { label: string; mode?: 'eew' | 'flash' | 'detail' | 'lpgm' }[] = [
+    { label: '1. 地震発生 (T+0s)' },
+    { label: '2. 揺れの検知 (P波初検知)' },
+    { label: '3. 緊急地震速報 (予報) [数秒〜]', mode: 'eew' },
+    { label: '4. 緊急地震速報 (警報) [数秒〜]', mode: 'eew' },
+    { label: '5. 主要動到達 (S波到達)' },
+    { label: '6. 震度速報 [約1~2分後]', mode: 'flash' },
+    { label: '7. 震源・震度情報 [約3~5分後]', mode: 'detail' },
+    { label: '8. 長周期地震動観測情報 [約10分後]', mode: 'lpgm' },
   ];
 
   return (
     <div className="glass-panel timeline-panel">
-      <h3
-        className="mb-3 text-sm font-bold"
-        style={{ color: 'var(--accent-cyan)', marginTop: 0, marginBottom: '12px' }}
-      >
-        JMA Event Flow
-      </h3>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+        <h3
+          className="text-sm font-bold"
+          style={{ color: 'var(--accent-cyan)', margin: 0 }}
+        >
+          JMA Event Flow
+        </h3>
+        <button
+          type="button"
+          onClick={() => setMapDisplayMode('auto')}
+          style={{
+            background: mapDisplayMode === 'auto' ? 'rgba(0, 242, 254, 0.25)' : 'rgba(255,255,255,0.08)',
+            border: `1px solid ${mapDisplayMode === 'auto' ? 'var(--accent-cyan)' : 'rgba(255,255,255,0.2)'}`,
+            color: mapDisplayMode === 'auto' ? '#00f2fe' : '#94a3b8',
+            borderRadius: '6px',
+            fontSize: '11px',
+            padding: '2px 8px',
+            cursor: 'pointer'
+          }}
+          title="最新の発表情報に応じて地図色を自動切り替え"
+        >
+          自動
+        </button>
+      </div>
+
       <div id="jma-timeline">
         {stepsActive.map((_, idx) => {
           const isCompleted = idx < currentActiveIdx;
           const isCurrent = idx === currentActiveIdx;
+          const meta = stepMeta[idx];
+          const isSelectedMode = meta.mode && mapDisplayMode === meta.mode;
+
           const className = [
             'timeline-step',
             isCompleted ? 'completed' : '',
             isCurrent ? 'active' : '',
+            isSelectedMode ? 'selected-mode' : '',
+            meta.mode && stepsActive[idx] ? 'cursor-pointer hover:opacity-80' : ''
           ]
             .filter(Boolean)
             .join(' ');
+
           return (
-            <div key={`step-${idx}`} id={`step-${idx}`} className={className}>
-              <div className="step-dot"></div>
-              <span>{labels[idx]}</span>
+            <div
+              key={`step-${idx}`}
+              id={`step-${idx}`}
+              className={className}
+              style={{
+                cursor: meta.mode && stepsActive[idx] ? 'pointer' : 'default',
+                padding: '4px 6px',
+                borderRadius: '6px',
+                background: isSelectedMode ? 'rgba(0, 242, 254, 0.15)' : 'transparent'
+              }}
+              onClick={() => {
+                if (meta.mode && stepsActive[idx]) {
+                  setMapDisplayMode(meta.mode);
+                }
+              }}
+              title={meta.mode && stepsActive[idx] ? `クリックして地図を「${meta.label}」表示に切り替え` : undefined}
+            >
+              <div className="step-dot" style={{
+                background: isSelectedMode ? '#00f2fe' : undefined,
+                boxShadow: isSelectedMode ? '0 0 8px #00f2fe' : undefined
+              }}></div>
+              <span style={{ fontSize: '12px' }}>{meta.label}</span>
             </div>
           );
         })}

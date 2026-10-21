@@ -94,12 +94,10 @@ export class EEWEngine {
        return null;
      }
 
-     let hasNewPTrigger = false;
-     let hasAccelerationCondition = false; // Forecast condition based on 100 gal
+     let hasAccelerationCondition = false;
 
      for (const ev of newEvents) {
-       if (ev.state === StationState.P_TRIGGERED) { // 1
-         hasNewPTrigger = true;
+       if (ev.state === StationState.P_TRIGGERED) {
          this.triggeredObservations.push({
            lat: stationsLats[ev.stationIndex],
            lon: stationsLons[ev.stationIndex],
@@ -114,15 +112,18 @@ export class EEWEngine {
        }
      }
 
-     if (!hasNewPTrigger || this.triggeredObservations.length === 0) {
+     if (this.triggeredObservations.length === 0) {
        return null;
      }
 
-     // Rate Limiting: Issue report on 1st detection, then wait at least 3 seconds AND 5+ new stations
+     // Rate Limiting & Sequential Reporting:
+     // - 1st report: immediately upon first triggered station
+     // - Sequential reports: issue every 2.0s if new stations observed, or at least every 3.5s
      const isFirstReport = this.reportCount === 0;
      const timeSinceLastReport = currentTime - this.lastReportTime;
      const shouldIssueReport = isFirstReport ||
-                                (this.stationsSinceLastReport >= 5 && timeSinceLastReport >= 3.0);
+                                (this.stationsSinceLastReport >= 1 && timeSinceLastReport >= 2.0) ||
+                                (timeSinceLastReport >= 3.5);
 
      if (!shouldIssueReport) {
        return null;
@@ -133,8 +134,14 @@ export class EEWEngine {
      this.stationsSinceLastReport = 0;
      const estHypo = estimateHypocenterAndMagnitude(this.triggeredObservations);
 
-     // Predict ground motion intensity across all 47 prefectures
-     const prefectureWarnings: PrefectureWarning[] = [];
+     // Collect prefecture predictions
+     type PrefEval = {
+       code: number;
+       name: string;
+       jmaScale: JmaIntensityScale;
+       lpgmClass: 0 | 1 | 2 | 3 | 4;
+     };
+     const prefEvals: PrefEval[] = [];
      let maxPredictedIntensity: JmaIntensityScale = '0';
      let maxLpgmClass = 0; // 0 means no significant LPGM
 
@@ -157,11 +164,11 @@ export class EEWEngine {
          maxLpgmClass = lpgmResult.classLevel;
        }
 
-       prefectureWarnings.push({
-         prefCode: code,
-         prefName: pref.name,
-         maxPredictedIntensity: jmaScale,
-         isWarning: isJmaGreaterOrEqual(jmaScale, '5-')
+       prefEvals.push({
+         code,
+         name: pref.name,
+         jmaScale,
+         lpgmClass: lpgmResult.classLevel
        });
      }
 
@@ -195,17 +202,34 @@ export class EEWEngine {
        isWarningAlertNeeded = true;
      }
 
-     // Final report condition: 30+ stations or 8+ reports or 60s elapsed
-     const isFinal = this.triggeredObservations.length >= 30 || this.reportCount >= 8 || currentTime >= 60.0;
-
      if (isWarningAlertNeeded) {
        this.isWarningIssued = true;
      }
+     const overallIsWarning = this.isWarningIssued;
+
+     // Construct prefecture warnings with official JMA criteria:
+     // When a warning is active, all prefectures with predicted intensity >= 4 (or LPGM >= 3) are subject to WARNING.
+     // Other prefectures with predicted intensity >= 3 are FORECAST.
+     const prefectureWarnings: PrefectureWarning[] = prefEvals.map((p) => {
+       const isPrefWarning = overallIsWarning && (isJmaGreaterOrEqual(p.jmaScale, '4') || p.lpgmClass >= 3);
+       const isPrefForecast = isJmaGreaterOrEqual(p.jmaScale, '3') || p.lpgmClass >= 1;
+
+       return {
+         prefCode: p.code,
+         prefName: p.name,
+         maxPredictedIntensity: p.jmaScale,
+         isWarning: isPrefWarning,
+         isForecast: isPrefForecast
+       };
+     });
+
+     // Final report condition: 15+ reports or 75s elapsed, or 40s with 150+ stations
+     const isFinal = this.reportCount >= 15 || currentTime >= 75.0 || (currentTime >= 40.0 && this.triggeredObservations.length >= 150);
 
      const report: EEWReport = {
        reportNumber: this.reportCount,
        isFinal,
-       isWarning: isWarningAlertNeeded || this.isWarningIssued,
+       isWarning: overallIsWarning,
        estimatedHypocenter: estHypo,
        originTime: estHypo.originTime,
        triggeredStationCount: this.triggeredObservations.length,

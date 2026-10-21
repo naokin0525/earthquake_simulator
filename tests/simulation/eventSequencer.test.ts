@@ -79,7 +79,8 @@ describe('EventSequencer reports', () => {
       magnitude: 9
     };
 
-    const result = sequencer.update(20, 0, null, northernHypocenter, [], new Uint8Array());
+    sequencer.update(180, 0, null, northernHypocenter, [], new Uint8Array());
+    const result = sequencer.update(300, 0, null, northernHypocenter, [], new Uint8Array());
     const report = result.event?.type === 'LPGM_REPORT' ? result.event.payload : undefined;
     const affectedPrefectures = report?.affectedPrefectures ?? [];
     const expected = Object.entries(PREFECTURE_CENTROIDS)
@@ -94,5 +95,28 @@ describe('EventSequencer reports', () => {
     expect(affectedPrefectures).toEqual(expected);
     expect(affectedPrefectures.some((prefecture) => prefecture.prefName === '北海道')).toBe(true);
     expect(affectedPrefectures.some((prefecture) => prefecture.prefName === '東京都')).toBe(false);
+  });
+
+  it('issues detailed EARTHQUAKE_INFO report at simTime >= 180s', () => {
+    const sequencer = new EventSequencer();
+    const prefCodes = new Uint8Array(1).fill(13); // Tokyo
+    const triggers = [stationTrigger(0, StationState.S_ARRIVED, '5-')];
+
+    // Prime with arrival
+    sequencer.update(10, 1, null, hypocenter, triggers, prefCodes);
+
+    // Flash report at ~70s
+    const flashResult = sequencer.update(75, 1, null, hypocenter, [], prefCodes);
+    expect(flashResult.event?.type).toBe('FLASH_REPORT');
+
+    // Earthquake info report at ~180s
+    const result = sequencer.update(180, 1, null, hypocenter, [], prefCodes);
+    expect(result.event?.type).toBe('EARTHQUAKE_INFO');
+    const report = result.event?.type === 'EARTHQUAKE_INFO' ? result.event.payload : undefined;
+    expect(report).toBeDefined();
+    expect(report?.issuedTime).toBe(180);
+    expect(report?.epicenterName).toBeDefined();
+    expect(report?.maxIntensity).toBe('5-');
+    expect(report?.prefectures.some((p) => p.prefName === '東京都')).toBe(true);
   });
 });

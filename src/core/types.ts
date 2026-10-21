@@ -14,6 +14,7 @@ export type JmaIntensityScale = '0' | '1' | '2' | '3' | '4' | '5-' | '5+' | '6-'
 
 export interface LPGMReport {
   issuedTime: number;
+  maxClass: 1 | 2 | 3 | 4;
   affectedPrefectures: {
     prefCode: number;
     prefName: string;
@@ -23,9 +24,31 @@ export interface LPGMReport {
 
 export interface IntensityFlashReport {
   issuedTime: number;
+  maxIntensity: JmaIntensityScale;
   intensities: {
     [scale in JmaIntensityScale]?: string[]; // scale -> list of prefecture names
   };
+  prefectures: {
+    prefCode: number;
+    prefName: string;
+    maxIntensity: JmaIntensityScale;
+  }[];
+  summary: string;
+}
+
+export interface EarthquakeInfoReport {
+  issuedTime: number;
+  hypocenter: EarthquakeHypocenter;
+  epicenterName: string;
+  maxIntensity: JmaIntensityScale;
+  intensities: {
+    [scale in JmaIntensityScale]?: string[];
+  };
+  prefectures: {
+    prefCode: number;
+    prefName: string;
+    maxIntensity: JmaIntensityScale;
+  }[];
   summary: string;
 }
 
@@ -35,6 +58,7 @@ export type SimulationMilestoneType =
   | 'EEW_FORECAST'
   | 'EEW_WARNING'
   | 'FLASH_REPORT'
+  | 'EARTHQUAKE_INFO'
   | 'FINAL_REPORT'
   | 'LPGM_REPORT';
 
@@ -72,7 +96,8 @@ export interface PrefectureWarning {
   prefCode: number;
   prefName: string;
   maxPredictedIntensity: JmaIntensityScale;
-  isWarning: boolean; // True if max predicted intensity >= 5-
+  isWarning: boolean; // True if警報対象 (気象庁: 全体で5弱以上予想時、震度4以上が予想される地域)
+  isForecast?: boolean; // True if予報対象 (震度3以上が予想される地域)
 }
 
 export interface EEWReport {
@@ -138,6 +163,7 @@ export type WorkerOutboundEvent =
   | { type: 'EEW_ALERT'; payload: EEWReport }
   | { type: 'INTENSITY_REPORT'; payload: { prefCode: number; maxIntensity: JmaIntensityScale }[] }
   | { type: 'FLASH_REPORT'; payload: IntensityFlashReport }
+  | { type: 'EARTHQUAKE_INFO'; payload: EarthquakeInfoReport }
   | { type: 'LPGM_REPORT'; payload: LPGMReport }
   | { type: 'MILESTONE'; payload: SimulationMilestone }
   | { type: 'FINISHED' }

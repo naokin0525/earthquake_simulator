@@ -146,6 +146,64 @@ html {
 	padding: 18px;
 }
 
+.control-toggles {
+	display: grid;
+	grid-template-columns: 1fr 1fr;
+	gap: 8px;
+	margin-top: 8px;
+}
+
+.btn-secondary {
+	background: rgba(51, 65, 85, 0.9);
+	border: 1px solid rgba(255, 255, 255, 0.14);
+	font-size: 12px;
+	padding: 8px 10px;
+}
+
+.btn:disabled {
+	cursor: not-allowed;
+	opacity: 0.55;
+}
+
+.station-detail {
+	position: absolute;
+	bottom: 78px;
+	left: 20px;
+	z-index: 11;
+	width: min(320px, calc(100vw - 40px));
+	padding: 14px;
+	font-size: 12px;
+	line-height: 1.6;
+	color: #e2e8f0;
+}
+
+.station-detail-header {
+	display: flex;
+	justify-content: space-between;
+	align-items: flex-start;
+	gap: 12px;
+	margin-bottom: 6px;
+	color: var(--accent-cyan);
+	font-size: 14px;
+}
+
+.station-detail-id {
+	display: block;
+	color: #94a3b8;
+	font-size: 11px;
+	font-weight: 400;
+}
+
+.station-detail-close {
+	border: 0;
+	background: transparent;
+	color: #cbd5e1;
+	cursor: pointer;
+	font-size: 20px;
+	line-height: 1;
+	padding: 0 2px;
+}
+
 /* Legend */
 .legend {
 	position: absolute;

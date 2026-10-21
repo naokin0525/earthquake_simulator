@@ -45,25 +45,24 @@ function startTickLoop(): void {
     // 1) Advance the physical simulation state and collect any newly triggered stations.
     const tickState = simulationEngine.update(dtSeconds);
 
-    // 2) Evaluate EEW alerts only when new station triggers occurred; this keeps the alert logic
-    //    responsive without reprocessing the full station set on every tick.
-    if (tickState.newTriggers.length > 0) {
-      const eewReport = eewEngine.update(
-        tickState.newTriggers,
-        stationBuffer.lats,
-        stationBuffer.lons,
-        stationBuffer.ampFactors,
-        tickState.simTime
-      );
+    // 2) Evaluate EEW alerts when new triggers occurred or periodically (every ~1.0s) so sequential reports update reliably.
+    const eewReport = eewEngine.update(
+      tickState.newTriggers,
+      stationBuffer.lats,
+      stationBuffer.lons,
+      stationBuffer.ampFactors,
+      tickState.simTime
+    );
 
-      if (eewReport) {
-        tickState.currentEEWReport = eewReport;
-        postWorkerMessage({ type: 'EEW_ALERT', payload: eewReport });
-      }
+    if (eewReport) {
+      tickState.currentEEWReport = eewReport;
+      postWorkerMessage({ type: 'EEW_ALERT', payload: eewReport });
+    } else if (eewEngine.getLatestReport()) {
+      tickState.currentEEWReport = eewEngine.getLatestReport();
     }
 
     // 3) Convert the current risk state into milestone/event announcements (e.g. warning issuance,
-    //    flash report, LPGM report) so the UI can show timed narrative feedback.
+    //    flash report, earthquake info, LPGM report) so the UI can show timed narrative feedback.
     const seqResult = eventSequencer.update(
       tickState.simTime,
       simulationEngine.getStationStates().filter((s: number) => s !== 0).length,
@@ -80,6 +79,8 @@ function startTickLoop(): void {
       // Map internal sequencer events to worker outbound events
       if (seqResult.event.type === 'FLASH_REPORT') {
         postWorkerMessage({ type: 'FLASH_REPORT', payload: seqResult.event.payload });
+      } else if (seqResult.event.type === 'EARTHQUAKE_INFO') {
+        postWorkerMessage({ type: 'EARTHQUAKE_INFO', payload: seqResult.event.payload });
       } else if (seqResult.event.type === 'LPGM_REPORT') {
         postWorkerMessage({ type: 'LPGM_REPORT', payload: seqResult.event.payload });
       }

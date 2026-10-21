@@ -5,6 +5,22 @@
  */
 import { EEWReport } from '../types';
 
+export function formatEewWarningAnnouncement(report: EEWReport): string {
+  const intensityNames: Record<string, string> = {
+    '5-': '5弱',
+    '5+': '5強',
+    '6-': '6弱',
+    '6+': '6強'
+  };
+  const intensity = intensityNames[report.maxPredictedIntensity] ?? report.maxPredictedIntensity;
+  const warnedNames = report.warnedPrefectures
+    .filter((prefecture) => prefecture.isWarning)
+    .map((prefecture) => prefecture.prefName);
+  const areas = warnedNames.length > 0 ? `警報対象地域は${warnedNames.join('、')}です。` : '';
+
+  return `緊急地震速報、警報です。最大予想震度は${intensity}、検知した観測点は${report.triggeredStationCount}地点です。${areas}`;
+}
+
 export interface EEWBannerStyle {
   background: string;
   borderColor: string;

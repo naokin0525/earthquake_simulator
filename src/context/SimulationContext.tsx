@@ -15,6 +15,7 @@ import {
   WorkerInboundAction,
   WorkerOutboundEvent,
   IntensityFlashReport,
+  EarthquakeInfoReport,
   LPGMReport,
   SimulationMilestone
 } from '../core/types';
@@ -23,10 +24,13 @@ import {
   DEFAULT_HYPOCENTER,
   shouldPlayEewWarningChime
 } from '../core/simulationState';
+import { formatEewWarningAnnouncement } from '../core/ui/EEWFormatter';
 import { StationLoader } from '../loaders/StationLoader';
 import { computeAmpFactorsFromTiles } from '../loaders/AmpFactorTileLoader';
 import { loadDailyNoise } from '../loaders/NoiseLoader';
 import { audioAlertSystem } from '../utils/audioAlert';
+
+export type MapDisplayMode = 'auto' | 'eew' | 'flash' | 'detail' | 'lpgm' | 'off';
 
 interface SimulationContextValue {
   isReady: boolean;
@@ -41,14 +45,18 @@ interface SimulationContextValue {
   triggerEventsMap: Map<number, StationTriggerEvent>;
   eewReport: EEWReport | null;
   flashReport: IntensityFlashReport | null;
+  earthquakeInfoReport: EarthquakeInfoReport | null;
   lpgmReport: LPGMReport | null;
   milestones: SimulationMilestone[];
   isMeshVisible: boolean;
   fps: number;
   isMuted: boolean;
+  isSpeechEnabled: boolean;
+  isSpeechSupported: boolean;
   isKyoshinMonitor: boolean;
   mapVersion: number;
   hasEpicenter: boolean;
+  mapDisplayMode: MapDisplayMode;
 
   // Actions
   setHypocenter: (lat: number, lon: number) => void;
@@ -61,7 +69,10 @@ interface SimulationContextValue {
   reset: () => void;
   seek: (time: number) => void;
   toggleMute: () => void;
+  toggleSpeech: () => void;
   toggleKyoshinMonitor: () => void;
+  setMapDisplayMode: (mode: MapDisplayMode) => void;
+  jumpToTime: (targetTime: number) => void;
 }
 
 const SimulationContext = createContext<SimulationContextValue | null>(null);
@@ -79,21 +90,28 @@ export const SimulationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   const [stationBuffer, setStationBuffer] = useState<StationDataBuffer | null>(null);
   const [eewReport, setEewReport] = useState<EEWReport | null>(null);
   const [flashReport, setFlashReport] = useState<IntensityFlashReport | null>(null);
+  const [earthquakeInfoReport, setEarthquakeInfoReport] = useState<EarthquakeInfoReport | null>(null);
   const [lpgmReport, setLpgmReport] = useState<LPGMReport | null>(null);
   const [milestones, setMilestones] = useState<SimulationMilestone[]>([]);
   const [isMeshVisible, setIsMeshVisible] = useState(false);
   const [isKyoshinMonitor, setIsKyoshinMonitor] = useState(false);
   const [mapVersion, setMapVersion] = useState(0);
   const [hasEpicenter, setHasEpicenter] = useState(false);
+  const [mapDisplayMode, setMapDisplayMode] = useState<MapDisplayMode>('auto');
   const [fps, setFps] = useState(60);
   const [isMuted, setIsMuted] = useState(audioAlertSystem.getMuted());
+  const [isSpeechEnabled, setIsSpeechEnabled] = useState(audioAlertSystem.getSpeechEnabled());
+  const isSpeechSupported = audioAlertSystem.canSpeak();
 
   const stationStatesRef = useRef<Uint8Array>(new Uint8Array(0));
   const triggerEventsMapRef = useRef<Map<number, StationTriggerEvent>>(new Map());
+  const eewReportRef = useRef<EEWReport | null>(null);
 
   const clearReportState = useCallback(() => {
+    eewReportRef.current = null;
     setEewReport(null);
     setFlashReport(null);
+    setEarthquakeInfoReport(null);
     setLpgmReport(null);
     setMilestones([]);
   }, []);
@@ -149,6 +167,7 @@ export const SimulationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         }
 
         if (tick.currentEEWReport) {
+          eewReportRef.current = tick.currentEEWReport;
           setEewReport(tick.currentEEWReport);
         }
 
@@ -157,17 +176,20 @@ export const SimulationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       }
 
       case 'EEW_ALERT':
-        setEewReport((previousReport) => {
-          const nextReport = msg.payload;
-          if (shouldPlayEewWarningChime(previousReport, nextReport)) {
-            audioAlertSystem.playEewWarningChime();
-          }
-          return nextReport;
-        });
+        if (shouldPlayEewWarningChime(eewReportRef.current, msg.payload)) {
+          audioAlertSystem.playEewWarningChime();
+          audioAlertSystem.speak(formatEewWarningAnnouncement(msg.payload));
+        }
+        eewReportRef.current = msg.payload;
+        setEewReport(msg.payload);
         break;
 
       case 'FLASH_REPORT':
         setFlashReport(msg.payload);
+        break;
+
+      case 'EARTHQUAKE_INFO':
+        setEarthquakeInfoReport(msg.payload);
         break;
 
       case 'LPGM_REPORT':
@@ -280,6 +302,12 @@ export const SimulationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     audioAlertSystem.setMute(nextMuted);
   }, [isMuted]);
 
+  const toggleSpeech = useCallback(() => {
+    const nextEnabled = !isSpeechEnabled;
+    setIsSpeechEnabled(nextEnabled);
+    audioAlertSystem.setSpeechEnabled(nextEnabled);
+  }, [isSpeechEnabled]);
+
   const setHypocenter = useCallback((lat: number, lon: number) => {
     const updated = { ...hypocenter, lat, lon };
     setHypocenterState(updated);
@@ -312,6 +340,13 @@ export const SimulationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     setIsMeshVisible(prev => !prev);
   }, []);
 
+  const jumpToTime = useCallback((targetTime: number) => {
+    if (!isPlaying) {
+      play();
+    }
+    seek(targetTime);
+  }, [isPlaying, play, seek]);
+
   return (
     <SimulationContext.Provider
       value={{
@@ -327,14 +362,18 @@ export const SimulationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         triggerEventsMap: triggerEventsMapRef.current,
         eewReport,
         flashReport,
+        earthquakeInfoReport,
         lpgmReport,
         milestones,
         isMeshVisible,
         fps,
         isMuted,
+        isSpeechEnabled,
+        isSpeechSupported,
         isKyoshinMonitor,
         mapVersion,
         hasEpicenter,
+        mapDisplayMode,
         toggleKyoshinMonitor,
         setHypocenter,
         setDepth,
@@ -345,7 +384,10 @@ export const SimulationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         pause,
         reset,
         seek,
-        toggleMute
+        toggleMute,
+        toggleSpeech,
+        setMapDisplayMode,
+        jumpToTime
       }}
     >
       {children}

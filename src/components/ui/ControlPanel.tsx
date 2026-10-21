@@ -1,7 +1,7 @@
 /**
  * src/components/ui/ControlPanel.tsx
  * ==================================
- * Floating control panel for simulation execution (Play, Pause, Reset, Speed, Depth, Mw, Mesh overlay).
+ * Floating control panel for simulation execution (Play, Pause, Reset, Speed, Depth, Mw, Quick jumps).
  */
 
 import React from 'react';
@@ -21,10 +21,16 @@ export const ControlPanel: React.FC = () => {
     setMagnitude,
     setTimeScale,
     hasEpicenter,
+    isMuted,
+    isSpeechEnabled,
+    isSpeechSupported,
+    toggleMute,
+    toggleSpeech,
+    jumpToTime
   } = useSimulation();
 
   return (
-    <div className="glass-panel controls">
+    <div className="glass-panel controls" style={{ maxHeight: 'calc(100vh - 40px)', overflowY: 'auto' }}>
       {/* Depth Slider */}
       <div className="flex-between">
         <span>震源の深さ</span>
@@ -57,6 +63,69 @@ export const ControlPanel: React.FC = () => {
         className="w-full"
       />
 
+      {/* Speed Multiplier */}
+      <div style={{ marginTop: '10px', marginBottom: '6px' }}>
+        <div style={{ fontSize: '11px', color: '#94a3b8', marginBottom: '4px' }}>再生速度 (Speed):</div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '4px' }}>
+          {[1, 2, 5, 10].map((s) => (
+            <button
+              key={s}
+              type="button"
+              onClick={() => setTimeScale(s)}
+              style={{
+                background: timeScale === s ? 'rgba(0, 242, 254, 0.25)' : 'rgba(255,255,255,0.06)',
+                border: `1px solid ${timeScale === s ? 'var(--accent-cyan)' : 'rgba(255,255,255,0.1)'}`,
+                color: timeScale === s ? '#00f2fe' : '#cbd5e1',
+                borderRadius: '4px',
+                fontSize: '11px',
+                padding: '4px 0',
+                cursor: 'pointer',
+                fontWeight: timeScale === s ? 'bold' : 'normal'
+              }}
+            >
+              {s}x
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Quick Jump Buttons */}
+      <div style={{ marginTop: '8px', marginBottom: '8px' }}>
+        <div style={{ fontSize: '11px', color: '#94a3b8', marginBottom: '4px' }}>情報発表時刻へジャンプ:</div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '4px' }}>
+          <button
+            type="button"
+            className="btn btn-secondary"
+            style={{ fontSize: '10px', padding: '5px 2px' }}
+            disabled={!hasEpicenter}
+            onClick={() => jumpToTime(75)}
+            title="震度速報の発表時刻 (T+75s) へジャンプ"
+          >
+            震度速報へ
+          </button>
+          <button
+            type="button"
+            className="btn btn-secondary"
+            style={{ fontSize: '10px', padding: '5px 2px' }}
+            disabled={!hasEpicenter}
+            onClick={() => jumpToTime(180)}
+            title="震源・震度情報の発表時刻 (T+180s) へジャンプ"
+          >
+            震源・震度へ
+          </button>
+          <button
+            type="button"
+            className="btn btn-secondary"
+            style={{ fontSize: '10px', padding: '5px 2px' }}
+            disabled={!hasEpicenter}
+            onClick={() => jumpToTime(300)}
+            title="長周期地震動観測情報の発表時刻 (T+300s) へジャンプ"
+          >
+            長周期情報へ
+          </button>
+        </div>
+      </div>
+
       {/* Play / Pause */}
       <button id="play-btn" className="btn" onClick={isPlaying ? pause : play} disabled={!hasEpicenter}>
         {isPlaying ? '一時停止' : 'シミュレーション開始'}
@@ -71,6 +140,29 @@ export const ControlPanel: React.FC = () => {
       <button id="kyoshin-btn" className="btn" onClick={toggleKyoshinMonitor}>
         {isKyoshinMonitor ? 'OFF' : '強震モニター'}
       </button>
+
+      <div className="control-toggles">
+        <button
+          id="audio-toggle"
+          className="btn btn-secondary"
+          type="button"
+          onClick={toggleMute}
+          aria-pressed={!isMuted}
+        >
+          警報音: {isMuted ? 'OFF' : 'ON'}
+        </button>
+        <button
+          id="speech-toggle"
+          className="btn btn-secondary"
+          type="button"
+          onClick={toggleSpeech}
+          disabled={!isSpeechSupported}
+          aria-pressed={isSpeechEnabled}
+          title={isSpeechSupported ? '日本語音声でEEW警報を読み上げます' : 'このブラウザーは音声読み上げに対応していません'}
+        >
+          読み上げ: {isSpeechEnabled ? 'ON' : 'OFF'}
+        </button>
+      </div>
 
       {/* Epicenter required notice */}
       {!hasEpicenter && (
