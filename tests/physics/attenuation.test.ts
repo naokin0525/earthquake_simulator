@@ -28,6 +28,12 @@ describe('Si & Midorikawa (1999) PGV & JMA Intensity Engine', () => {
     expect(bedrockPgv).toBeLessThan(300.0);
   });
 
+  it('should increase PGV continuously with the fraction of ray path inside the slab', () => {
+    const baseline = calculateBedrockPgv(100, 200, 7, 0, 'crustal');
+    const fullSlabPath = calculateBedrockPgv(100, 200, 7, 1, 'crustal');
+    expect(fullSlabPath / baseline).toBeCloseTo(10 ** 0.12, 6);
+  });
+
   it('should scale surface PGV proportionally with site amplification factor ARV', () => {
     const bedrockPgv = 10.0; // 10 cm/s
     const pgvSoftSoil = calculateSurfacePgv(bedrockPgv, 2.5); // Soft soil ARV = 2.5

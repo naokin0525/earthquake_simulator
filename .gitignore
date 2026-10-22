@@ -30,4 +30,15 @@ data_references/
 public/*
 !public/logo/
 !public/logo/epicenter.svg
+!public/data/
+public/data/*
+!public/data/slab2/
+public/data/slab2/*
+!public/data/slab2/manifest.json
+!public/data/slab2/*.png
+!data_references/
+data_references/*
+!data_references/slab2/
+data_references/slab2/*
+!data_references/slab2/README.md
 station_noise/raw/

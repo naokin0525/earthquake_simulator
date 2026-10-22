@@ -28,16 +28,16 @@ const INITIAL_VIEW_STATE = {
 
 // Official JMA Seismic Intensity scale RGB colors
 const INTENSITY_FILL_COLORS: Record<string, [number, number, number, number]> = {
-  '7':  [184, 37, 247, 220],
+  '7': [184, 37, 247, 220],
   '6+': [151, 30, 39, 220],
   '6-': [234, 66, 37, 220],
   '5+': [223, 116, 44, 220],
   '5-': [232, 153, 57, 220],
-  '4':  [246, 195, 68, 220],
-  '3':  [104, 193, 249, 220],
-  '2':  [198, 244, 205, 180],
-  '1':  [140, 180, 210, 160],
-  '0':  [35, 42, 35, 230]
+  '4': [246, 195, 68, 220],
+  '3': [104, 193, 249, 220],
+  '2': [198, 244, 205, 180],
+  '1': [140, 180, 210, 160],
+  '0': [35, 42, 35, 230]
 };
 
 // JMA Long-Period Ground Motion (LPGM) Class RGB colors
@@ -191,10 +191,10 @@ export const MapContainer: React.FC = () => {
           if (effectiveMode === 'eew') {
             const w = eewMap.get(prefCode);
             if (w?.isWarning) {
-              // 警報対象地域: 鮮烈な警報色 (Red)
+              // 警報対象地域: 赤色
               return [220, 38, 38, 220];
             } else if (w?.isForecast) {
-              // 予報対象地域: 予報色 (Orange/Amber)
+              // 予報対象地域: オレンジ色
               return [234, 153, 57, 180];
             }
             return [35, 42, 35, 240];

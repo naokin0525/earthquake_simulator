@@ -16,7 +16,7 @@ import {
 } from '../types';
 import { computeTravelTimes } from '../physics/travelTime';
 import { calculateJmaIntensity, calculateContinuousJmaIntensity, envelope } from '../physics/attenuation';
-import { calculateSlabFraction } from '../physics/slabModel';
+import { calculateSlabFraction, Slab2Model } from '../physics/slabModel';
 import { pointSourceDistance } from '../physics/distance';
 
 function generateGaussianNoise(stdDev: number): number {
@@ -42,7 +42,7 @@ export class SimulationEngine {
   private dailyNoise: Float32Array = new Float32Array(0);
   private measuredPgvs: Float32Array = new Float32Array(0);
 
-  constructor(stations: StationDataBuffer) {
+  constructor(stations: StationDataBuffer, private readonly slabModel?: Slab2Model) {
     this.stations = stations;
     const N = this.stations.totalStations;
     this.stationStates = new Uint8Array(N);
@@ -76,7 +76,7 @@ export class SimulationEngine {
 
       // Slab fraction is used as a path-quality factor: stations near the subduction slab see a
       // slightly different attenuation velocity/energy behavior than stations in normal crust.
-      const rSlab = calculateSlabFraction(hypo.lat, hypo.lon, hypo.depth, stLat, stLon);
+      const rSlab = calculateSlabFraction(hypo.lat, hypo.lon, hypo.depth, stLat, stLon, this.slabModel);
       this.slabFractions[i] = rSlab;
 
       const travelTimes = computeTravelTimes(hypo, stLat, stLon, rSlab);

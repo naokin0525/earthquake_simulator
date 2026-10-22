@@ -14,6 +14,7 @@ import {
 import { SimulationEngine } from '../core/simulation/SimulationEngine';
 import { EEWEngine } from '../core/eew/EEWEngine';
 import { EventSequencer } from '../core/simulation/EventSequencer';
+import { Slab2Model } from '../core/physics/slabModel';
 
 let simulationEngine: SimulationEngine | null = null;
 let eewEngine: EEWEngine | null = null;
@@ -98,15 +99,16 @@ function stopTickLoop(): void {
   }
 }
 
-self.onmessage = (event: MessageEvent<WorkerInboundAction>) => {
+self.onmessage = async (event: MessageEvent<WorkerInboundAction>) => {
   const action = event.data;
 
   try {
     switch (action.type) {
       case 'INIT_STATIONS': {
         stationBuffer = action.payload;
-        simulationEngine = new SimulationEngine(stationBuffer);
-        eewEngine = new EEWEngine();
+        const slabModel = await Slab2Model.load();
+        simulationEngine = new SimulationEngine(stationBuffer, slabModel);
+        eewEngine = new EEWEngine(slabModel);
         eventSequencer = new EventSequencer();
         postWorkerMessage({ type: 'READY' });
         break;
@@ -160,10 +162,10 @@ self.onmessage = (event: MessageEvent<WorkerInboundAction>) => {
       default:
         break;
     }
-  } catch (err: any) {
+  } catch (err: unknown) {
     postWorkerMessage({
       type: 'ERROR',
-      payload: { message: err?.message || 'Unknown Web Worker error' }
+      payload: { message: err instanceof Error ? err.message : 'Unknown Web Worker error' }
     });
   }
 };

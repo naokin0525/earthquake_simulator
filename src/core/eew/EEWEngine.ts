@@ -15,7 +15,7 @@ import {
  } from '../types';
 import { estimateHypocenterAndMagnitude, TriggeredObservation } from './eewInversion';
 import { calculateJmaIntensity, isJmaGreaterOrEqual } from '../physics/attenuation';
-import { calculateSlabFraction } from '../physics/slabModel';
+import { calculateSlabFraction, Slab2Model } from '../physics/slabModel';
 import { estimateLPGM } from '../physics/lpgm'; // Added LPGM estimation
 import { pointSourceDistance } from '../physics/distance';
 
@@ -78,6 +78,8 @@ export class EEWEngine {
    private isWarningIssued: boolean = false;
    private lastReportTime: number = 0;
    private stationsSinceLastReport: number = 0;
+
+   constructor(private readonly slabModel?: Slab2Model) {}
 
    public reset(): void {
      this.triggeredObservations = [];
@@ -149,7 +151,14 @@ export class EEWEngine {
        const pref = PREFECTURE_CENTROIDS[code];
        if (!pref) continue;
 
-       const rSlab = calculateSlabFraction(estHypo.lat, estHypo.lon, estHypo.depth, pref.lat, pref.lon);
+       const rSlab = calculateSlabFraction(
+         estHypo.lat,
+         estHypo.lon,
+         estHypo.depth,
+         pref.lat,
+         pref.lon,
+         this.slabModel
+       );
        const dist = pointSourceDistance(pref.lat, pref.lon, estHypo.lat, estHypo.lon, estHypo.depth);
 
        const { jmaScale } = calculateJmaIntensity(dist, estHypo.depth, estHypo.magnitude, pref.defaultArv, rSlab);

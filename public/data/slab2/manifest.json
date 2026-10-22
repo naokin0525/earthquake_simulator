@@ -1,0 +1,59 @@
+{
+  "encoding": "Two opaque RGBA8 images per region; R/G=16-bit depth or thickness code; zero=NoData",
+  "regions": [
+    {
+      "id": "kur",
+      "label": "Pacific plate - Kuril/Japan",
+      "depthImage": "/data/slab2/kur_dep.png",
+      "thicknessImage": "/data/slab2/kur_thk.png",
+      "minLon": 121.0,
+      "maxLon": 170.0,
+      "minLat": 35.0,
+      "maxLat": 61.0,
+      "width": 981,
+      "height": 521,
+      "gridStepDegrees": 0.05,
+      "depthOffsetKm": 7.40841531754,
+      "depthScale": 99,
+      "thicknessOffsetKm": 110.418403625,
+      "thicknessScale": 100,
+      "validCells": 119754
+    },
+    {
+      "id": "izu",
+      "label": "Pacific plate - Izu-Bonin",
+      "depthImage": "/data/slab2/izu_dep.png",
+      "thicknessImage": "/data/slab2/izu_thk.png",
+      "minLon": 134.0,
+      "maxLon": 148.0,
+      "minLat": 10.0,
+      "maxLat": 35.0,
+      "width": 281,
+      "height": 501,
+      "gridStepDegrees": 0.05,
+      "depthOffsetKm": 5.67337989807,
+      "depthScale": 100,
+      "thicknessOffsetKm": 134.300308228,
+      "thicknessScale": 100,
+      "validCells": 40403
+    },
+    {
+      "id": "ryu",
+      "label": "Philippine Sea plate - Ryukyu/Nankai",
+      "depthImage": "/data/slab2/ryu_dep.png",
+      "thicknessImage": "/data/slab2/ryu_thk.png",
+      "minLon": 116.0,
+      "maxLon": 143.0,
+      "minLat": 19.0,
+      "maxLat": 41.0,
+      "width": 541,
+      "height": 441,
+      "gridStepDegrees": 0.05,
+      "depthOffsetKm": 4.20645570755,
+      "depthScale": 100,
+      "thicknessOffsetKm": 48.1820297241,
+      "thicknessScale": 100,
+      "validCells": 33661
+    }
+  ]
+}

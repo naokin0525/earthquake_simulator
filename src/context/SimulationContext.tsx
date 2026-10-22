@@ -138,6 +138,11 @@ export const SimulationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         setIsReady(true);
         break;
 
+      case 'ERROR':
+        console.error('[SimulationContext] Simulation worker error:', msg.payload.message);
+        setIsReady(false);
+        break;
+
       case 'TICK': {
         const tick: SimulationTickState = msg.payload;
         setSimTime(tick.simTime);

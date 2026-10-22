@@ -5,25 +5,208 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { calculateSlabFraction } from '../../src/core/physics/slabModel';
+import { readFileSync } from 'node:fs';
+import { inflateSync } from 'node:zlib';
+import { resolve } from 'node:path';
+import {
+  calculateSlabFraction,
+  Slab2Model,
+  SlabGridMetadata,
+  SlabGridRaster,
+  traceSlabFraction
+} from '../../src/core/physics/slabModel';
 import { computeTravelTimes } from '../../src/core/physics/travelTime';
-import { calculateBedrockPgv } from '../../src/core/physics/attenuation';
+import { calculateBedrockPgv, calculateJmaIntensity } from '../../src/core/physics/attenuation';
+import { SimulationEngine } from '../../src/core/simulation/SimulationEngine';
+import { StationDataBuffer } from '../../src/core/types';
+import { pointSourceDistance } from '../../src/core/physics/distance';
+
+function decodeGeneratedPng(imageUrl: string): { width: number; height: number; pixels: Uint8ClampedArray } {
+  const imagePath = resolve(process.cwd(), 'public', imageUrl.replace(/^\/+/, ''));
+  const png = readFileSync(imagePath);
+  expect(png.subarray(0, 8).toString('hex')).toBe('89504e470d0a1a0a');
+  const width = png.readUInt32BE(16);
+  const height = png.readUInt32BE(20);
+  expect(png[24]).toBe(8);
+  expect(png[25]).toBe(6);
+
+  const imageData: Buffer[] = [];
+  let offset = 8;
+  while (offset < png.length) {
+    const length = png.readUInt32BE(offset);
+    const type = png.toString('ascii', offset + 4, offset + 8);
+    if (type === 'IDAT') imageData.push(png.subarray(offset + 8, offset + 8 + length));
+    offset += 12 + length;
+  }
+
+  const raw = inflateSync(Buffer.concat(imageData));
+  const rowLength = width * 4;
+  const pixels = new Uint8ClampedArray(width * height * 4);
+  for (let row = 0; row < height; row++) {
+    const sourceOffset = row * (rowLength + 1);
+    expect(raw[sourceOffset]).toBe(0);
+    pixels.set(raw.subarray(sourceOffset + 1, sourceOffset + 1 + rowLength), row * rowLength);
+  }
+  return { width, height, pixels };
+}
+
+function loadGeneratedSlab2Model(): Slab2Model {
+  const manifestPath = resolve(process.cwd(), 'public', 'data', 'slab2', 'manifest.json');
+  const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as { regions: SlabGridMetadata[] };
+  const rasters: SlabGridRaster[] = manifest.regions.map((metadata) => {
+    const depth = decodeGeneratedPng(metadata.depthImage);
+    const thickness = decodeGeneratedPng(metadata.thicknessImage);
+    expect(depth.width).toBe(metadata.width);
+    expect(depth.height).toBe(metadata.height);
+    expect(thickness.width).toBe(metadata.width);
+    expect(thickness.height).toBe(metadata.height);
+    return {
+      metadata,
+      depthPixels: depth.pixels,
+      thicknessPixels: thickness.pixels
+    };
+  });
+  return Slab2Model.fromRasters(rasters);
+}
 
 describe('Subducting Slab & Anomalous Seismic Intensity Model', () => {
+  const syntheticGrid = (): Slab2Model => {
+    const metadata: SlabGridMetadata = {
+      id: 'test',
+      label: 'test slab',
+      depthImage: '/test_dep.png',
+      thicknessImage: '/test_thk.png',
+      minLon: 139.9,
+      maxLon: 140.1,
+      minLat: 34.9,
+      maxLat: 35.1,
+      width: 5,
+      height: 5,
+      gridStepDegrees: 0.05,
+      depthOffsetKm: 100,
+      depthScale: 100,
+      thicknessOffsetKm: 100,
+      thicknessScale: 100,
+      validCells: 25
+    };
+    const depthPixels = new Uint8ClampedArray(metadata.width * metadata.height * 4);
+    const thicknessPixels = new Uint8ClampedArray(metadata.width * metadata.height * 4);
+    for (let index = 0; index < metadata.width * metadata.height; index++) {
+      const offset = index * 4;
+      depthPixels[offset + 1] = 1;
+      thicknessPixels[offset + 1] = 1;
+      depthPixels[offset + 3] = 255;
+      thicknessPixels[offset + 3] = 255;
+    }
+    return Slab2Model.fromRasters([{ metadata, depthPixels, thicknessPixels }]);
+  };
+
+  it('should decode top depth and thickness and exclude NoData pixels', () => {
+    const model = syntheticGrid();
+    expect(model.isInsideSlab(35.0, 140.0, 100)).toBe(true);
+    expect(model.isInsideSlab(35.0, 140.0, 200)).toBe(true);
+    expect(model.isInsideSlab(35.0, 140.0, 99.9)).toBe(false);
+    expect(model.isInsideSlab(35.0, 140.0, 200.1)).toBe(false);
+    expect(model.isInsideSlab(35.0, 139.8, 150)).toBe(false);
+  });
+
+  it('should integrate the fraction of a 3D ray inside a Slab2 slab volume', () => {
+    const model = syntheticGrid();
+    const fraction = traceSlabFraction(
+      { lat: 35.0, lon: 140.0, depth: 150 },
+      35.0,
+      140.0,
+      model
+    );
+    expect(fraction).toBeCloseTo(1 / 3, 1);
+    expect(calculateSlabFraction(35.0, 140.0, 150, 35.0, 140.0, model)).toBe(fraction);
+  });
+
   it('should return 0 slab fraction for shallow hypocenters (depth < 80km)', () => {
     const rSlabShallow = calculateSlabFraction(35.5, 139.0, 30.0, 36.0, 140.0);
     expect(rSlabShallow).toBe(0.0);
   });
 
-  it('should produce positive slab fraction for deep hypocenters heading eastward toward Pacific trench', () => {
-    // Deep hypocenter D=350km beneath Sea of Japan / Vladivostok (40.0N, 135.0E)
-    // Station on Pacific coast (Sanriku/Miyagi: 38.3N, 141.0E)
+  it('should use the generated Slab2 images for real deep-event ray paths', () => {
+    const model = loadGeneratedSlab2Model();
+    const hypocenter = {
+      lat: 37.3,
+      lon: 133.9,
+      depth: 456.91,
+      magnitude: 7.0,
+      originTime: 0.0
+    };
+    const tokyo = { lat: 35.7, lon: 139.7 };
+    const kyushu = { lat: 32.8, lon: 130.7 };
+    const tokyoFraction = calculateSlabFraction(
+      hypocenter.lat,
+      hypocenter.lon,
+      hypocenter.depth,
+      tokyo.lat,
+      tokyo.lon,
+      model
+    );
+    const kyushuFraction = calculateSlabFraction(
+      hypocenter.lat,
+      hypocenter.lon,
+      hypocenter.depth,
+      kyushu.lat,
+      kyushu.lon,
+      model
+    );
+
+    expect(tokyoFraction).toBeGreaterThan(0.5);
+    expect(kyushuFraction).toBeLessThan(0.2);
+    expect(tokyoFraction - kyushuFraction).toBeGreaterThan(0.5);
+
+    const tokyoWithSlab = computeTravelTimes(hypocenter, tokyo.lat, tokyo.lon, tokyoFraction);
+    const tokyoWithoutSlab = computeTravelTimes(hypocenter, tokyo.lat, tokyo.lon);
+    expect(tokyoWithSlab.pArrivalTime).toBeLessThan(tokyoWithoutSlab.pArrivalTime);
+
+    const pgvWithSlab = calculateBedrockPgv(500, hypocenter.depth, hypocenter.magnitude, tokyoFraction);
+    const pgvWithoutSlab = calculateBedrockPgv(500, hypocenter.depth, hypocenter.magnitude, 0);
+    expect(pgvWithSlab).toBeGreaterThan(pgvWithoutSlab);
+
+    const stations: StationDataBuffer = {
+      totalStations: 2,
+      lats: new Float32Array([tokyo.lat, kyushu.lat]),
+      lons: new Float32Array([tokyo.lon, kyushu.lon]),
+      ampFactors: new Float32Array([1, 1]),
+      prefCodes: new Uint8Array([13, 43])
+    };
+    const engine = new SimulationEngine(stations, model);
+    engine.init({
+      hypocenter,
+      timeScale: 1,
+      tickIntervalMs: 50,
+      noiseStdDev: 0
+    });
+    const events = engine.update(1000).newTriggers;
+    const tokyoEvent = events.find((event) => event.stationIndex === 0);
+    expect(tokyoEvent).toBeDefined();
+    expect(tokyoEvent?.pArrivalTime).toBeCloseTo(tokyoWithSlab.pArrivalTime, 4);
+
+    const expectedIntensity = calculateJmaIntensity(
+      pointSourceDistance(tokyo.lat, tokyo.lon, hypocenter.lat, hypocenter.lon, hypocenter.depth),
+      hypocenter.depth,
+      hypocenter.magnitude,
+      1,
+      tokyoFraction
+    );
+    expect(tokyoEvent?.intensity).toBe(expectedIntensity.jmaScale);
+    expect(tokyoEvent?.pgvSurface).toBeCloseTo(expectedIntensity.pgvSurface, 4);
+    const expectedWithoutSlab = calculateJmaIntensity(
+      pointSourceDistance(tokyo.lat, tokyo.lon, hypocenter.lat, hypocenter.lon, hypocenter.depth),
+      hypocenter.depth,
+      hypocenter.magnitude,
+      1
+    );
+    expect(expectedIntensity.pgvSurface).toBeGreaterThan(expectedWithoutSlab.pgvSurface);
+  });
+
+  it('should retain the legacy fallback for callers without raster data', () => {
     const rSlabPacific = calculateSlabFraction(40.0, 135.0, 350.0, 38.3, 141.0);
     expect(rSlabPacific).toBeGreaterThan(0.2);
-
-    // Station heading westward (toward China/Russia)
-    const rSlabWest = calculateSlabFraction(40.0, 135.0, 350.0, 40.0, 130.0);
-    expect(rSlabWest).toBe(0.0);
   });
 
   it('should boost wave velocity and reduce attenuation along slab-dominated ray paths for deep events', () => {
