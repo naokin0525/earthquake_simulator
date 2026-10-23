@@ -64,6 +64,7 @@ export const MapContainer: React.FC = () => {
     hypocenter,
     pRadiusKm,
     sRadiusKm,
+    simTime,
     eewReport,
     flashReport,
     earthquakeInfoReport,
@@ -353,6 +354,7 @@ export const MapContainer: React.FC = () => {
     // Layer 2: Dual Wave Fronts (Ground Truth & EEW Estimated)
     const waveLayers = createWaveFrontLayers({
       trueHypocenter: hypocenter,
+      currentTime: hypocenter.originTime + simTime,
       pRadiusKm,
       sRadiusKm,
       eewReport
@@ -388,6 +390,7 @@ export const MapContainer: React.FC = () => {
     hypocenter,
     pRadiusKm,
     sRadiusKm,
+    simTime,
     eewReport,
     flashReport,
     earthquakeInfoReport,
