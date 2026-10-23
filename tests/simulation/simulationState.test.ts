@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createSimulationConfig, DEFAULT_HYPOCENTER, shouldPlayEewWarningChime } from './simulationState';
+import { createSimulationConfig, DEFAULT_HYPOCENTER, shouldPlayEewWarningChime } from '../../src/core/simulationState';
 
 describe('simulationState', () => {
   it('plays a warning chime only on the first warning transition', () => {
