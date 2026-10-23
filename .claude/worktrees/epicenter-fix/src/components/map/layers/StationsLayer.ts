@@ -19,7 +19,7 @@ export interface StationLayerProps {
   onHover?: (info: any) => void;
 }
 
-const KYOSHI_GRADIENT: { Intensity: number; R: number; G: number; B: number }[] = [
+const KYOSHIN_GRADIENT: { Intensity: number; R: number; G: number; B: number }[] = [
   { Intensity: -3, R: 0, G: 0, B: 205 },
   { Intensity: -2.9, R: 0, G: 7, B: 209 },
   { Intensity: -2.8, R: 0, G: 14, B: 214 },
@@ -124,7 +124,7 @@ const KYOSHI_GRADIENT: { Intensity: number; R: number; G: number; B: number }[] 
   { Intensity: 8, R: 0, G: 0, B: 0 }
 ];
 
-  const JMA_COLOR_MAP: Record<number, [number, number, number, number]> = {
+const JMA_COLOR_MAP: Record<number, [number, number, number, number]> = {
   1: [75, 150, 214, 240],  // '1'
   2: [16, 78, 158, 240],   // '2'
   3: [30, 130, 76, 240],    // '3'
@@ -136,19 +136,19 @@ const KYOSHI_GRADIENT: { Intensity: number; R: number; G: number; B: number }[] 
   9: [142, 68, 173, 255]    // '7'
 };
 function getKyoshinColor(val: number): [number, number, number, 255] {
-  const min = KYOSHI_GRADIENT[0].Intensity;
-  const max = KYOSHI_GRADIENT[KYOSHI_GRADIENT.length - 1].Intensity;
+  const min = KYOSHIN_GRADIENT[0].Intensity;
+  const max = KYOSHIN_GRADIENT[KYOSHIN_GRADIENT.length - 1].Intensity;
   if (val <= min) {
-    const { R, G, B } = KYOSHI_GRADIENT[0];
+    const { R, G, B } = KYOSHIN_GRADIENT[0];
     return [R, G, B, 255];
   }
   if (val >= max) {
-    const { R, G, B } = KYOSHI_GRADIENT[KYOSHI_GRADIENT.length - 1];
+    const { R, G, B } = KYOSHIN_GRADIENT[KYOSHIN_GRADIENT.length - 1];
     return [R, G, B, 255];
   }
-  for (let i = 0; i < KYOSHI_GRADIENT.length - 1; i++) {
-    const a = KYOSHI_GRADIENT[i];
-    const b = KYOSHI_GRADIENT[i + 1];
+  for (let i = 0; i < KYOSHIN_GRADIENT.length - 1; i++) {
+    const a = KYOSHIN_GRADIENT[i];
+    const b = KYOSHIN_GRADIENT[i + 1];
     if (val >= a.Intensity && val <= b.Intensity) {
       const t = (val - a.Intensity) / (b.Intensity - a.Intensity);
       const r = Math.round(a.R + t * (b.R - a.R));
@@ -157,7 +157,7 @@ function getKyoshinColor(val: number): [number, number, number, 255] {
       return [r, g, bcol, 255];
     }
   }
-  const { R, G, B } = KYOSHI_GRADIENT[0];
+  const { R, G, B } = KYOSHIN_GRADIENT[0];
   return [R, G, B, 255];
 }
 

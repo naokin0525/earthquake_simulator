@@ -168,7 +168,7 @@ export class EEWEngine {
        }
 
        // LPGM estimation for this prefecture
-       const lpgmResult = estimateLPGM(estHypo, pref.lat, pref.lon);
+       const lpgmResult = estimateLPGM(estHypo, pref.lat, pref.lon, pref.defaultArv);
        if (lpgmResult.classLevel > maxLpgmClass) {
          maxLpgmClass = lpgmResult.classLevel;
        }

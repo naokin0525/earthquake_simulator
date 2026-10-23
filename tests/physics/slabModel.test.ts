@@ -110,6 +110,53 @@ describe('Subducting Slab & Anomalous Seismic Intensity Model', () => {
     expect(model.isInsideSlab(35.0, 139.8, 150)).toBe(false);
   });
 
+  it('should interpolate contour lines from adjacent valid raster cells only', () => {
+    const metadata: SlabGridMetadata = {
+      id: 'contour-test',
+      label: 'contour test',
+      depthImage: '/test_dep.png',
+      thicknessImage: '/test_thk.png',
+      minLon: 139.9,
+      maxLon: 140.0,
+      minLat: 35.0,
+      maxLat: 35.1,
+      width: 2,
+      height: 2,
+      gridStepDegrees: 0.1,
+      depthOffsetKm: 0,
+      depthScale: 1,
+      thicknessOffsetKm: 0,
+      thicknessScale: 1,
+      validCells: 4
+    };
+    const depthPixels = new Uint8ClampedArray([
+      0, 1, 0, 255, 0, 101, 0, 255,
+      0, 101, 0, 255, 0, 1, 0, 255
+    ]);
+    const model = Slab2Model.fromRasters([{
+      metadata,
+      depthPixels,
+      thicknessPixels: new Uint8ClampedArray(16)
+    }]);
+
+    const contours = model.getDepthContours([50]);
+    expect(contours).toHaveLength(2);
+    expect(contours.map(({ path }) =>
+      path.map(([lon, lat]) => [Number(lon.toFixed(6)), Number(lat.toFixed(6))])
+    )).toEqual([
+      [[139.9, 35.05], [139.95, 35.1]],
+      [[140, 35.05], [139.95, 35]]
+    ]);
+
+    depthPixels[1] = 0;
+    const modelWithNoData = Slab2Model.fromRasters([{
+      metadata,
+      depthPixels,
+      thicknessPixels: new Uint8ClampedArray(16)
+    }]);
+    expect(modelWithNoData.getDepthContours([50])).toHaveLength(0);
+  });
+
   it('should integrate the fraction of a 3D ray inside a Slab2 slab volume', () => {
     const model = syntheticGrid();
     const fraction = traceSlabFraction(

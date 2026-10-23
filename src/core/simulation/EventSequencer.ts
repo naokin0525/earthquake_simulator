@@ -296,7 +296,7 @@ export class EventSequencer {
     let maxClass: 1 | 2 | 3 | 4 = 1;
 
     for (const [code, prefecture] of Object.entries(PREFECTURE_CENTROIDS)) {
-      const result = estimateLPGM(hypo, prefecture.lat, prefecture.lon);
+      const result = estimateLPGM(hypo, prefecture.lat, prefecture.lon, prefecture.defaultArv);
       if (result.classLevel === 0) continue;
 
       if (result.classLevel > maxClass) {

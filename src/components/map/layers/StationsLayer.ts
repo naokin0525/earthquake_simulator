@@ -8,6 +8,7 @@
 import { ScatterplotLayer } from '@deck.gl/layers';
 import { StationDataBuffer, StationState, JmaIntensityScale, StationTriggerEvent } from '../../../core/types';
 import { jmaScaleToNumeric } from '../../../core/physics/attenuation';
+import { getKyoshinColor } from '../../../core/utils/colorUtils';
 
 export interface StationLayerProps {
   id?: string;
@@ -18,21 +19,6 @@ export interface StationLayerProps {
   mapVersion?: number;
   onHover?: (info: any) => void;
 }
-
-const KYOSHIN_GRADIENT: { Intensity: number; R: number; G: number; B: number }[] = [
-  { Intensity: -3, R: 0, G: 0, B: 205 },
-  { Intensity: -2, R: 0, G: 72, B: 250 },
-  { Intensity: -1, R: 0, G: 208, B: 139 },
-  { Intensity: 0, R: 63, G: 250, B: 54 },
-  { Intensity: 1, R: 189, G: 255, B: 12 },
-  { Intensity: 2, R: 255, G: 255, B: 0 },
-  { Intensity: 3, R: 255, G: 221, B: 0 },
-  { Intensity: 4, R: 255, G: 144, B: 0 },
-  { Intensity: 5, R: 255, G: 68, B: 0 },
-  { Intensity: 6, R: 245, G: 0, B: 0 },
-  { Intensity: 7, R: 170, G: 0, B: 0 },
-  { Intensity: 8, R: 0, G: 0, B: 0 }
-];
 
 const JMA_COLOR_MAP: Record<number, [number, number, number, number]> = {
   1: [75, 150, 214, 240],  // '1'
@@ -45,31 +31,6 @@ const JMA_COLOR_MAP: Record<number, [number, number, number, number]> = {
   8: [192, 57, 43, 255],    // '6+'
   9: [142, 68, 173, 255]    // '7'
 };
-function getKyoshinColor(val: number): [number, number, number, 255] {
-  const min = KYOSHIN_GRADIENT[0].Intensity;
-  const max = KYOSHIN_GRADIENT[KYOSHIN_GRADIENT.length - 1].Intensity;
-  if (val <= min) {
-    const { R, G, B } = KYOSHIN_GRADIENT[0];
-    return [R, G, B, 255];
-  }
-  if (val >= max) {
-    const { R, G, B } = KYOSHIN_GRADIENT[KYOSHIN_GRADIENT.length - 1];
-    return [R, G, B, 255];
-  }
-  for (let i = 0; i < KYOSHIN_GRADIENT.length - 1; i++) {
-    const a = KYOSHIN_GRADIENT[i];
-    const b = KYOSHIN_GRADIENT[i + 1];
-    if (val >= a.Intensity && val <= b.Intensity) {
-      const t = (val - a.Intensity) / (b.Intensity - a.Intensity);
-      const r = Math.round(a.R + t * (b.R - a.R));
-      const g = Math.round(a.G + t * (b.G - a.G));
-      const bcol = Math.round(a.B + t * (b.B - a.B));
-      return [r, g, bcol, 255];
-    }
-  }
-  const { R, G, B } = KYOSHIN_GRADIENT[0];
-  return [R, G, B, 255];
-}
 
 export function createStationsLayer(props: StationLayerProps): ScatterplotLayer {
   const { stationBuffer, stationStates, triggerEventsMap, onHover, kyoshinMonitor, mapVersion, id = 'stations-layer' } = props;
@@ -89,12 +50,11 @@ export function createStationsLayer(props: StationLayerProps): ScatterplotLayer 
     getFillColor: (d: number) => {
       const state = stationStates[d] ?? StationState.IDLE;
       if (kyoshinMonitor) {
-        // Determine intensity value (instrumental)
+        // Prefer waveform-derived instrumental intensity; fall back to the modeled estimate.
         let intensityVal = -3; // Default minimum intensity
         const ev = triggerEventsMap?.get(d);
         if (ev) {
-          // Use continuousIntensity if available; fallback to -3
-          intensityVal = ev.continuousIntensity ?? -3;
+          intensityVal = ev.instrumentalIntensity ?? ev.continuousIntensity ?? -3;
         }
         return getKyoshinColor(intensityVal);
       }

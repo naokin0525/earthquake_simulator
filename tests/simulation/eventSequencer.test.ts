@@ -87,7 +87,12 @@ describe('EventSequencer reports', () => {
       .map(([code, prefecture]) => ({
         prefCode: Number(code),
         prefName: prefecture.name,
-        classLevel: estimateLPGM(northernHypocenter, prefecture.lat, prefecture.lon).classLevel
+        classLevel: estimateLPGM(
+          northernHypocenter,
+          prefecture.lat,
+          prefecture.lon,
+          prefecture.defaultArv
+        ).classLevel
       }))
       .filter((prefecture) => prefecture.classLevel > 0);
 

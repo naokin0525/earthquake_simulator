@@ -29,11 +29,96 @@ export interface SlabGridRaster {
   thicknessPixels: Uint8ClampedArray;
 }
 
+export interface SlabDepthContour {
+  threshold: number;
+  path: [[number, number], [number, number]];
+}
+
 export class Slab2Model {
   private constructor(private readonly grids: SlabGridRaster[]) {}
 
   public static fromRasters(grids: SlabGridRaster[]): Slab2Model {
     return new Slab2Model(grids);
+  }
+
+  public getDepthContours(thresholds: number[]): SlabDepthContour[] {
+    const contours: SlabDepthContour[] = [];
+
+    for (const { metadata, depthPixels } of this.grids) {
+      const sampleDepth = (x: number, y: number): number | null => {
+        const pixelIndex = (y * metadata.width + x) * 4;
+        const encodedDepth = (depthPixels[pixelIndex] << 8) | depthPixels[pixelIndex + 1];
+        return encodedDepth === 0
+          ? null
+          : metadata.depthOffsetKm + (encodedDepth - 1) / metadata.depthScale;
+      };
+
+      for (const threshold of thresholds) {
+        for (let y = 0; y < metadata.height - 1; y += 1) {
+          for (let x = 0; x < metadata.width - 1; x += 1) {
+            const corners = [
+              sampleDepth(x, y),
+              sampleDepth(x + 1, y),
+              sampleDepth(x + 1, y + 1),
+              sampleDepth(x, y + 1)
+            ];
+            if (corners.some((depth) => depth === null)) continue;
+            const depths = corners as [number, number, number, number];
+            const cellCase = depths.reduce(
+              (value, depth, index) => value | (depth >= threshold ? 1 << index : 0),
+              0
+            );
+            if (cellCase === 0 || cellCase === 15) continue;
+
+            const centerIsDeep = depths.reduce((sum, depth) => sum + depth, 0) / 4 >= threshold;
+            const edgePairs = getContourEdgePairs(cellCase, centerIsDeep);
+            const edgePoints = [
+              interpolateContourPoint(
+                [x, y],
+                [x + 1, y],
+                depths[0],
+                depths[1],
+                threshold,
+                metadata
+              ),
+              interpolateContourPoint(
+                [x + 1, y],
+                [x + 1, y + 1],
+                depths[1],
+                depths[2],
+                threshold,
+                metadata
+              ),
+              interpolateContourPoint(
+                [x + 1, y + 1],
+                [x, y + 1],
+                depths[2],
+                depths[3],
+                threshold,
+                metadata
+              ),
+              interpolateContourPoint(
+                [x, y + 1],
+                [x, y],
+                depths[3],
+                depths[0],
+                threshold,
+                metadata
+              )
+            ];
+
+            for (const [startEdge, endEdge] of edgePairs) {
+              contours.push({
+                threshold,
+                path: [edgePoints[startEdge], edgePoints[endEdge]]
+              });
+            }
+          }
+        }
+      }
+    }
+
+    return contours;
   }
 
   public static async load(manifestUrl = '/data/slab2/manifest.json'): Promise<Slab2Model> {
@@ -78,6 +163,47 @@ export class Slab2Model {
     }
     return false;
   }
+}
+
+type ContourEdgePair = [number, number];
+
+function getContourEdgePairs(cellCase: number, centerIsDeep: boolean): ContourEdgePair[] {
+  switch (cellCase) {
+    case 1: return [[3, 0]];
+    case 2: return [[0, 1]];
+    case 3: return [[3, 1]];
+    case 4: return [[1, 2]];
+    case 5: return centerIsDeep ? [[3, 2], [0, 1]] : [[3, 0], [1, 2]];
+    case 6: return [[0, 2]];
+    case 7: return [[3, 2]];
+    case 8: return [[2, 3]];
+    case 9: return [[0, 2]];
+    case 10: return centerIsDeep ? [[3, 0], [1, 2]] : [[0, 1], [2, 3]];
+    case 11: return [[1, 2]];
+    case 12: return [[1, 3]];
+    case 13: return [[0, 1]];
+    case 14: return [[3, 0]];
+    default: return [];
+  }
+}
+
+function interpolateContourPoint(
+  start: [number, number],
+  end: [number, number],
+  startDepth: number,
+  endDepth: number,
+  threshold: number,
+  metadata: SlabGridMetadata
+): [number, number] {
+  const fraction = startDepth === endDepth
+    ? 0.5
+    : Math.max(0, Math.min(1, (threshold - startDepth) / (endDepth - startDepth)));
+  const x = start[0] + (end[0] - start[0]) * fraction;
+  const y = start[1] + (end[1] - start[1]) * fraction;
+  return [
+    metadata.minLon + x * metadata.gridStepDegrees,
+    metadata.maxLat - y * metadata.gridStepDegrees
+  ];
 }
 
 async function loadRasterPixels(

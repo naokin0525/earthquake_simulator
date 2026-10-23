@@ -11,7 +11,7 @@ export interface KyoshinGradientPoint {
   B: number;
 }
 
-export const KYOSHI_GRADIENT: KyoshinGradientPoint[] = [
+export const KYOSHIN_GRADIENT: KyoshinGradientPoint[] = [
   { Intensity: -3, R: 0, G: 0, B: 205 },
   { Intensity: -2.9, R: 0, G: 7, B: 209 },
   { Intensity: -2.8, R: 0, G: 14, B: 214 },
@@ -121,21 +121,21 @@ export const KYOSHI_GRADIENT: KyoshinGradientPoint[] = [
  * @param val The instrumental intensity value.
  */
 export function getKyoshinColor(val: number): [number, number, number, number] {
-  const min = KYOSHI_GRADIENT[0].Intensity;
-  const max = KYOSHI_GRADIENT[KYOSHI_GRADIENT.length - 1].Intensity;
-  
+  const min = KYOSHIN_GRADIENT[0].Intensity;
+  const max = KYOSHIN_GRADIENT[KYOSHIN_GRADIENT.length - 1].Intensity;
+
   if (val <= min) {
-    const { R, G, B } = KYOSHI_GRADIENT[0];
+    const { R, G, B } = KYOSHIN_GRADIENT[0];
     return [R, G, B, 255];
   }
   if (val >= max) {
-    const { R, G, B } = KYOSHI_GRADIENT[KYOSHI_GRADIENT.length - 1];
+    const { R, G, B } = KYOSHIN_GRADIENT[KYOSHIN_GRADIENT.length - 1];
     return [R, G, B, 255];
   }
-  
-  for (let i = 0; i < KYOSHI_GRADIENT.length - 1; i++) {
-    const a = KYOSHI_GRADIENT[i];
-    const b = KYOSHI_GRADIENT[i + 1];
+
+  for (let i = 0; i < KYOSHIN_GRADIENT.length - 1; i++) {
+    const a = KYOSHIN_GRADIENT[i];
+    const b = KYOSHIN_GRADIENT[i + 1];
     if (val >= a.Intensity && val <= b.Intensity) {
       const t = (val - a.Intensity) / (b.Intensity - a.Intensity);
       const r = Math.round(a.R + t * (b.R - a.R));
@@ -144,7 +144,7 @@ export function getKyoshinColor(val: number): [number, number, number, number] {
       return [r, g, bcol, 255];
     }
   }
-  
-  const { R, G, B } = KYOSHI_GRADIENT[0];
+
+  const { R, G, B } = KYOSHIN_GRADIENT[0];
   return [R, G, B, 255];
 }

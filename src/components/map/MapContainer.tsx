@@ -9,13 +9,14 @@
 import React, { useEffect, useRef, useState, useMemo } from 'react';
 import maplibregl from 'maplibre-gl';
 import DeckGL from '@deck.gl/react';
-import { GeoJsonLayer } from '@deck.gl/layers';
+import { GeoJsonLayer, PathLayer } from '@deck.gl/layers';
 import { useSimulation } from '../../hooks/useSimulation';
 import { createStationsLayer } from './layers/StationsLayer';
 import { createWaveFrontLayers } from './layers/WaveFrontLayer';
 import { createHypocenterLayers } from './layers/HypocenterLayer';
 import { createMeshIntensityLayer } from './layers/MeshIntensityLayer';
 import { StationLoader } from '../../loaders/StationLoader';
+import { Slab2Model, type SlabDepthContour } from '../../core/physics/slabModel';
 
 // Initial map view state focused on Japan
 const INITIAL_VIEW_STATE = {
@@ -54,6 +55,7 @@ export const MapContainer: React.FC = () => {
   const [hoverInfo, setHoverInfo] = useState<any>(null);
   const [stationMetadataMap, setStationMetadataMap] = useState<Map<number, any>>(new Map());
   const [selectedStationIndex, setSelectedStationIndex] = useState<number | null>(null);
+  const [slabDepthContours, setSlabDepthContours] = useState<SlabDepthContour[]>([]);
 
   const {
     stationBuffer,
@@ -125,6 +127,17 @@ export const MapContainer: React.FC = () => {
       map.remove();
     };
   }, [setHypocenter]);
+
+  useEffect(() => {
+    Slab2Model.load()
+      .then((slabModel) => {
+        setSlabDepthContours(slabModel.getDepthContours([30, 60, 90, 120, 150, 180, 220]));
+      })
+      .catch((error: unknown) => {
+        console.error('Failed to load Slab2 depth contours', error);
+        setSlabDepthContours([]);
+      });
+  }, []);
 
   // 2. Build Deck.gl Layers
   const deckLayers = useMemo(() => {
@@ -298,6 +311,32 @@ export const MapContainer: React.FC = () => {
       })
     );
 
+    if (slabDepthContours.length > 0) {
+      layers.push(
+        new PathLayer({
+          id: 'slab-depth-contours',
+          data: slabDepthContours,
+          getPath: (contour: SlabDepthContour) => contour.path,
+          getColor: (contour: SlabDepthContour) => {
+            if (contour.threshold <= 30) return [255, 62, 62, 100];
+            if (contour.threshold <= 60) return [255, 31, 31, 100];
+            if (contour.threshold <= 90) return [209, 0, 0, 100];
+            if (contour.threshold <= 120) return [133, 0, 0, 100];
+            if (contour.threshold <= 150) return [56, 0, 0, 100];
+            if (contour.threshold <= 180) return [28, 0, 0, 100];
+            return [0, 0, 0, 0];
+          },
+          getWidth: 1.5,
+          widthUnits: 'pixels',
+          widthMinPixels: 1,
+          jointRounded: true,
+          capRounded: true,
+          opacity: 0.95,
+          pickable: false
+        })
+      );
+    }
+
     // Layer 1: Custom WebGL 250m Mesh Intensity Shader Layer (if toggled)
     if (isMeshVisible) {
       layers.push(
@@ -357,7 +396,8 @@ export const MapContainer: React.FC = () => {
     isKyoshinMonitor,
     isMeshVisible,
     mapVersion,
-    hasEpicenter
+    hasEpicenter,
+    slabDepthContours
   ]);
 
   return (

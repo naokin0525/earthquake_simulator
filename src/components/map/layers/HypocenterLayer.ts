@@ -28,9 +28,11 @@ export function createHypocenterLayers(props: HypocenterLayerProps) {
           url: '/logo/epicenter.svg',
           width: 64,
           height: 64,
-          anchorY: 64
+          anchorY: 32
         }),
         sizeScale: 1,
+        sizeUnits: 'pixels',
+        getSize: 32,
         pickable: false
       })
     );
