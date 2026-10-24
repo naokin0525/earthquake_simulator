@@ -94,6 +94,28 @@ describe('EEW Inversion & Warning Alert Engine', () => {
     expect(haversineDistance(trueHypo.lat, trueHypo.lon, estimate.lat, estimate.lon)).toBeLessThan(15);
   });
 
+  it('should keep broad searches practical with hundreds of station observations', () => {
+    const observations: TriggeredObservation[] = Array.from({ length: 300 }, (_, index) => {
+      const lat = 25 + (index % 20);
+      const lon = 125 + Math.floor(index / 20) * 1.6;
+      const distance = Math.sqrt(
+        haversineDistance(trueHypo.lat, trueHypo.lon, lat, lon) ** 2 + trueHypo.depth ** 2
+      );
+      return {
+        lat,
+        lon,
+        tObs: trueHypo.originTime + distance / 6,
+        ampFactor: 1.5
+      };
+    });
+
+    const estimate = estimateHypocenterAndMagnitude(observations);
+
+    expect(Number.isFinite(estimate.lat)).toBe(true);
+    expect(Number.isFinite(estimate.lon)).toBe(true);
+    expect(haversineDistance(trueHypo.lat, trueHypo.lon, estimate.lat, estimate.lon)).toBeLessThan(25);
+  });
+
   it('should issue EEW Warning when predicted intensity is >= 5-', () => {
     const eewEngine = new EEWEngine();
 

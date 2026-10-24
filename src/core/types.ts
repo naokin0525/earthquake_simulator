@@ -144,6 +144,15 @@ export interface SimulationTickState {
   currentEEWReport: EEWReport | null; // Latest EEW report if generated/updated
 }
 
+export interface SimulationSeekSnapshot {
+  tick: SimulationTickState;
+  eewReport: EEWReport | null;
+  flashReport: IntensityFlashReport | null;
+  earthquakeInfoReport: EarthquakeInfoReport | null;
+  lpgmReport: LPGMReport | null;
+  milestones: SimulationMilestone[];
+}
+
 // ==============================================================================
 // Web Worker Messaging Protocol
 // ==============================================================================
@@ -155,11 +164,12 @@ export type WorkerInboundAction =
   | { type: 'RESUME' }
   | { type: 'SEEK'; payload: { time: number } }
   | { type: 'SET_SPEED'; payload: { speed: number } }
-  | { type: 'RESET' };
+  | { type: 'RESET'; payload?: SimulationConfig };
 
 export type WorkerOutboundEvent =
   | { type: 'READY' }
   | { type: 'TICK'; payload: SimulationTickState }
+  | { type: 'SEEK_SNAPSHOT'; payload: SimulationSeekSnapshot }
   | { type: 'EEW_ALERT'; payload: EEWReport }
   | { type: 'INTENSITY_REPORT'; payload: { prefCode: number; maxIntensity: JmaIntensityScale }[] }
   | { type: 'FLASH_REPORT'; payload: IntensityFlashReport }

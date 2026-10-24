@@ -24,6 +24,8 @@ const MIN_LONGITUDE = 122.0;
 const MAX_LONGITUDE = 154.0;
 const DEPTH_CANDIDATES_KM = [5, 10, 20, 40, 70, 100, 200, 400, 600];
 const PICK_HUBER_THRESHOLD_SECONDS = 0.2;
+const MAX_SEARCH_OBSERVATIONS = 32;
+const MAX_COARSE_CANDIDATES = 12_000;
 
 interface SourceCandidate {
   lat: number;
@@ -103,6 +105,19 @@ function estimateMagnitude(
   return Math.round(bestMagnitude * 10) / 10;
 }
 
+function selectSearchObservations(observations: TriggeredObservation[]): TriggeredObservation[] {
+  if (observations.length <= MAX_SEARCH_OBSERVATIONS) {
+    return observations;
+  }
+
+  return Array.from({ length: MAX_SEARCH_OBSERVATIONS }, (_, index) => {
+    const observationIndex = Math.round(
+      (index * (observations.length - 1)) / (MAX_SEARCH_OBSERVATIONS - 1)
+    );
+    return observations[observationIndex];
+  });
+}
+
 /**
  * Performs hypocenter and magnitude inversion given triggered station observations.
  */
@@ -140,6 +155,7 @@ export function estimateHypocenterAndMagnitude(
 
   // Sort observations by trigger time
   const sortedObs = [...validObs].sort((a, b) => a.tObs - b.tObs);
+  const searchObs = selectSearchObservations(sortedObs);
   const st1 = sortedObs[0];
   // --------------------------------------------------------------------------
   // Case 2 & 3: Multi-Station Inversion (>= 2 Stations)
@@ -164,13 +180,20 @@ export function estimateHypocenterAndMagnitude(
   const cMinLon = Math.max(MIN_LONGITUDE, minLon - 1.5);
   const cMaxLon = Math.min(MAX_LONGITUDE, maxLon + 1.5);
 
-  const coarseStep = 0.2; // Broad search, followed by local refinement.
+  let coarseStep = 0.2;
+  const coarseCandidateCount = () =>
+    (Math.ceil((cMaxLat - cMinLat) / coarseStep) + 1) *
+    (Math.ceil((cMaxLon - cMinLon) / coarseStep) + 1) *
+    DEPTH_CANDIDATES_KM.length;
+  while (coarseCandidateCount() > MAX_COARSE_CANDIDATES) {
+    coarseStep *= 1.25;
+  }
 
   // Stage 1: Coarse Grid Search
   for (let lat = cMinLat; lat <= cMaxLat; lat += coarseStep) {
     for (let lon = cMinLon; lon <= cMaxLon; lon += coarseStep) {
       for (const depth of DEPTH_CANDIDATES_KM) {
-        const candidate = evaluateCandidate(lat, lon, depth, sortedObs);
+        const candidate = evaluateCandidate(lat, lon, depth, searchObs);
         if (candidate.residual < minResidualSq) {
           minResidualSq = candidate.residual;
           bestLat = candidate.lat;
@@ -183,15 +206,16 @@ export function estimateHypocenterAndMagnitude(
 
   // Stage 2: Fine Grid Local Search (0.05 degrees resolution around best candidate)
   const fineStep = 0.05;
-  const fMinLat = Math.max(20.0, bestLat - 0.4);
-  const fMaxLat = Math.min(46.0, bestLat + 0.4);
-  const fMinLon = Math.max(122.0, bestLon - 0.4);
-  const fMaxLon = Math.min(154.0, bestLon + 0.4);
+  const fineRadius = Math.max(0.4, coarseStep);
+  const fMinLat = Math.max(20.0, bestLat - fineRadius);
+  const fMaxLat = Math.min(46.0, bestLat + fineRadius);
+  const fMinLon = Math.max(122.0, bestLon - fineRadius);
+  const fMaxLon = Math.min(154.0, bestLon + fineRadius);
 
   for (let lat = fMinLat; lat <= fMaxLat; lat += fineStep) {
     for (let lon = fMinLon; lon <= fMaxLon; lon += fineStep) {
       for (const depth of DEPTH_CANDIDATES_KM) {
-        const candidate = evaluateCandidate(lat, lon, depth, sortedObs);
+        const candidate = evaluateCandidate(lat, lon, depth, searchObs);
         if (candidate.residual < minResidualSq) {
           minResidualSq = candidate.residual;
           bestLat = candidate.lat;
@@ -203,6 +227,7 @@ export function estimateHypocenterAndMagnitude(
   }
 
   // Refine latitude, longitude, and depth together around the best grid candidate.
+  // Use every pick for this bounded local search to recover accuracy after coarse sampling.
   let latStep = 0.05;
   let lonStep = 0.05;
   let depthStep = 20;

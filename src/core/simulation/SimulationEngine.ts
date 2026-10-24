@@ -101,25 +101,20 @@ export class SimulationEngine {
     }
   }
 
-  public seek(timeSeconds: number): void {
-    this.simTime = Math.max(0.0, timeSeconds);
-    // Reset station states to prevent "instant trigger" jump
-    // Stations should only be triggered if simTime >= pObservedTimes[i]
-    this.stationStates.fill(0);
+  public seek(timeSeconds: number): SimulationTickState {
+    this.simTime = 0.0;
+    this.stationStates.fill(StationState.IDLE);
     this.measuredPgvs.fill(0);
 
-    // Re-evaluate all stations for the new seek time
-    const N = this.stations.totalStations;
-    for (let i = 0; i < N; i++) {
-      const pObs = this.pObservedTimes[i];
-      const sArr = this.sArrivalTimes[i];
+    const targetTime = Math.max(0.0, timeSeconds);
+    const timeScale = this.config?.timeScale ?? 1.0;
+    const pWaveState = this.update(targetTime / timeScale);
+    const sWaveState = this.update(0);
 
-      if (this.simTime >= sArr) {
-        this.stationStates[i] = StationState.S_ARRIVED;
-      } else if (this.simTime >= pObs) {
-        this.stationStates[i] = StationState.P_TRIGGERED;
-      }
-    }
+    return {
+      ...sWaveState,
+      newTriggers: [...pWaveState.newTriggers, ...sWaveState.newTriggers]
+    };
   }
 
   /**

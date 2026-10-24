@@ -73,6 +73,34 @@ describe('SimulationEngine State Machine & Wave Propagation', () => {
     expect(tick.pWaveRadiusKm).toBeCloseTo(28.28, 1);
   });
 
+  it('should rebuild trigger events and station states when seeking in either direction', () => {
+    const engine = new SimulationEngine(mockStations);
+    engine.init({
+      hypocenter: { lat: 35.5, lon: 139.5, depth: 10.0, magnitude: 6.5, originTime: 0.0 },
+      timeScale: 1.0,
+      tickIntervalMs: 50,
+      noiseStdDev: 0.0
+    });
+
+    const pWaveSnapshot = engine.seek(2.0);
+    expect(pWaveSnapshot.newTriggers).toHaveLength(1);
+    expect(pWaveSnapshot.newTriggers[0].state).toBe(StationState.P_TRIGGERED);
+    expect(engine.getStationStates()[0]).toBe(StationState.P_TRIGGERED);
+
+    const sWaveSnapshot = engine.seek(4.0);
+    expect(sWaveSnapshot.newTriggers).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ stationIndex: 0, state: StationState.P_TRIGGERED }),
+        expect.objectContaining({ stationIndex: 0, state: StationState.S_ARRIVED })
+      ])
+    );
+    expect(engine.getStationStates()[0]).toBe(StationState.S_ARRIVED);
+
+    const rewindSnapshot = engine.seek(0);
+    expect(rewindSnapshot.newTriggers).toHaveLength(0);
+    expect(engine.getStationStates().every((state) => state === StationState.IDLE)).toBe(true);
+  });
+
   it('should keep population density out of modeled PGV and EEW trigger estimates', () => {
     const stationsWithDensity: StationDataBuffer = {
       ...mockStations,

@@ -502,9 +502,9 @@ export const MapContainer: React.FC = () => {
                 intensity === '6-' ? '6弱' :
                   intensity === '6+' ? '6強' : intensity;
 
-            let stateText = '平常 (IDLE)';
-            if (state === 1) stateText = 'P波検知 (P_TRIGGERED)';
-            if (state === 2) stateText = 'S波到達 (S_ARRIVED)';
+            let stateText = '平常';
+            if (state === 1) stateText = 'P波検知';
+            if (state === 2) stateText = 'S波到達';
 
             return (
               <div className="space-y-1">
@@ -512,7 +512,7 @@ export const MapContainer: React.FC = () => {
                   {name} <span className="text-slate-400 font-normal">({id})</span>
                 </div>
                 <div>位置: 北緯 {lat}° / 東経 {lon}°</div>
-                <div>地盤増幅率 (ARV): <span className="font-semibold text-yellow-400">{arv}</span></div>
+                <div>地盤増幅率: <span className="font-semibold text-yellow-400">{arv}</span></div>
                 <div>状態: <span className="font-semibold text-amber-300">{stateText}</span></div>
                 {ev && (
                   <div>

@@ -7,7 +7,10 @@
 
 import {
   SimulationConfig,
+  SimulationMilestone,
+  SimulationSeekSnapshot,
   StationDataBuffer,
+  StationState,
   WorkerInboundAction,
   WorkerOutboundEvent
 } from '../core/types';
@@ -138,8 +141,74 @@ self.onmessage = async (event: MessageEvent<WorkerInboundAction>) => {
       }
 
       case 'SEEK': {
-        if (simulationEngine) {
-          simulationEngine.seek(action.payload.time);
+        if (simulationEngine && eewEngine && eventSequencer && stationBuffer) {
+          const tick = simulationEngine.seek(action.payload.time);
+          eewEngine.reset();
+          eventSequencer.reset();
+
+          const hypo = simulationEngine.getConfig()?.hypocenter;
+          const pTriggers = tick.newTriggers.filter((trigger) => trigger.state === StationState.P_TRIGGERED);
+          const eewReport = eewEngine.update(
+            pTriggers,
+            stationBuffer.lats,
+            stationBuffer.lons,
+            stationBuffer.ampFactors,
+            tick.simTime
+          );
+          tick.currentEEWReport = eewReport;
+
+          const milestones: SimulationMilestone[] = [];
+          const reports: Omit<SimulationSeekSnapshot, 'tick' | 'milestones'> = {
+            eewReport,
+            flashReport: null,
+            earthquakeInfoReport: null,
+            lpgmReport: null
+          };
+          const firstTrigger = pTriggers.reduce<typeof pTriggers[number] | null>(
+            (first, trigger) => !first || trigger.triggerTime < first.triggerTime ? trigger : first,
+            null
+          );
+          const origin = eventSequencer.update(0, 0, null, hypo, [], stationBuffer.prefCodes);
+          if (origin.milestone) milestones.push(origin.milestone);
+          if (firstTrigger) {
+            const first = eventSequencer.update(
+              firstTrigger.triggerTime,
+              1,
+              null,
+              hypo,
+              [firstTrigger],
+              stationBuffer.prefCodes
+            );
+            if (first.milestone) milestones.push(first.milestone);
+          }
+
+          if (tick.simTime > 0) {
+            for (let attempt = 0; attempt < 10; attempt++) {
+              const result = eventSequencer.update(
+                tick.simTime,
+                pTriggers.length,
+                eewReport,
+                hypo,
+                tick.newTriggers,
+                stationBuffer.prefCodes
+              );
+              if (result.milestone) milestones.push(result.milestone);
+              if (!result.event && !result.milestone) break;
+
+              if (result.event?.type === 'FLASH_REPORT') {
+                reports.flashReport = result.event.payload;
+              } else if (result.event?.type === 'EARTHQUAKE_INFO') {
+                reports.earthquakeInfoReport = result.event.payload;
+              } else if (result.event?.type === 'LPGM_REPORT') {
+                reports.lpgmReport = result.event.payload;
+              }
+            }
+          }
+
+          postWorkerMessage({
+            type: 'SEEK_SNAPSHOT',
+            payload: { tick, ...reports, milestones }
+          });
         }
         break;
       }
@@ -153,7 +222,13 @@ self.onmessage = async (event: MessageEvent<WorkerInboundAction>) => {
 
       case 'RESET': {
         stopTickLoop();
-        if (simulationEngine) simulationEngine.reset();
+        if (simulationEngine) {
+          if (action.payload) {
+            simulationEngine.init(action.payload);
+          } else {
+            simulationEngine.reset();
+          }
+        }
         if (eewEngine) eewEngine.reset();
         if (eventSequencer) eventSequencer.reset();
         break;

@@ -57,7 +57,7 @@ export const ControlPanel: React.FC = () => {
         id="mag"
         min="0.1"
         max="13.0"
-        step="0.1"
+        step="0.01"
         value={hypocenter.magnitude}
         onChange={(e) => setMagnitude(parseFloat(e.target.value))}
         className="w-full"

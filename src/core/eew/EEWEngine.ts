@@ -86,6 +86,8 @@ export class EEWEngine {
      this.reportCount = 0;
      this.latestReport = null;
      this.isWarningIssued = false;
+     this.lastReportTime = 0;
+     this.stationsSinceLastReport = 0;
    }
 
    /**
