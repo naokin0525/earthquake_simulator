@@ -417,10 +417,20 @@ describe('JMA Instrumental Seismic Intensity Engine', () => {
       expect(getJmaCompositeFilter(0.0)).toBe(0.0);
     });
 
+    it('should match the documented product of the periodic, high-cut, and low-cut gains', () => {
+      for (const frequency of [0.05, 0.5, 1.0, 10.0, 25.0]) {
+        const documentedGain =
+          getPeriodicEffectFilter(frequency) *
+          getHighCutFilter(frequency) *
+          getLowCutFilter(frequency);
+        expect(getJmaCompositeFilter(frequency)).toBeCloseTo(documentedGain, 12);
+      }
+    });
+
     it('should attenuate very low frequencies (low-cut filter)', () => {
       const gainLow = getJmaCompositeFilter(0.05);
       const gainMid = getJmaCompositeFilter(1.0);
-      expect(gainLow).toBeLessThan(0.1);
+      expect(gainLow).toBeLessThan(0.15);
       expect(gainLow).toBeLessThan(gainMid);
     });
 

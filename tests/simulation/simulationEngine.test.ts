@@ -72,4 +72,32 @@ describe('SimulationEngine State Machine & Wave Propagation', () => {
     expect(tick.simTime).toBe(5.0);
     expect(tick.pWaveRadiusKm).toBeCloseTo(28.28, 1);
   });
+
+  it('should keep population density out of modeled PGV and EEW trigger estimates', () => {
+    const stationsWithDensity: StationDataBuffer = {
+      ...mockStations,
+      dailyNoise: new Float32Array([26664, 26664, 26664])
+    };
+    const config = {
+      hypocenter: { lat: 35.5, lon: 139.5, depth: 10.0, magnitude: 6.5, originTime: 0.0 },
+      timeScale: 1.0,
+      tickIntervalMs: 50,
+      noiseStdDev: 0.0
+    };
+    const cleanEngine = new SimulationEngine(mockStations);
+    const densityEngine = new SimulationEngine(stationsWithDensity);
+    cleanEngine.init(config);
+    densityEngine.init(config);
+
+    const cleanTick = cleanEngine.update(2.0);
+    const densityTick = densityEngine.update(2.0);
+    const cleanTrigger = cleanTick.newTriggers.find((trigger) => trigger.stationIndex === 0);
+    const densityTrigger = densityTick.newTriggers.find((trigger) => trigger.stationIndex === 0);
+
+    expect(cleanTrigger).toBeDefined();
+    expect(densityTrigger).toBeDefined();
+    expect(densityTrigger?.pgvSurface).toBe(cleanTrigger?.pgvSurface);
+    expect(densityTrigger?.accelerationGal).toBe(cleanTrigger?.accelerationGal);
+    expect(densityTick.intensityUpdates?.[0].pgvSurface).toBe(cleanTick.intensityUpdates?.[0].pgvSurface);
+  });
 });

@@ -1,10 +1,10 @@
 /**
  * src/loaders/NoiseLoader.ts
  * ==========================
- * Loads daily‑life noise values for each station from a CSV file.
+ * Loads station population densities for ambient display variation.
  * The CSV is expected to have the following columns (including a header line):
  *   station,lat,lon,mesh_code,population_density_km2
- * The fifth column (population_density_km2) is used as the noise value.
+ * The fifth column is people/km² and must not be used as physical PGV noise.
  * Throws if the published CSV is missing, malformed, or does not match the station count.
  */
 

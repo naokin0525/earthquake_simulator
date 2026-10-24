@@ -84,15 +84,12 @@ export function getLowCutFilter(f: number): number {
 export function getJmaCompositeFilter(f: number): number {
   if (f <= 0.0) return 0.0;
 
-  const u = Math.pow(f / 0.5, 3);
   // Periodic effect filter: sqrt(1/f)
   const periodic = Math.sqrt(1.0 / f);
-  // Low‑cut filter factor: (1 - exp(-u))
-  const lowCut = 1.0 - Math.exp(-u);
-  const flOverF = periodic * lowCut;
+  const lowCut = getLowCutFilter(f);
   const fh = getHighCutFilter(f);
 
-  return flOverF * fh;
+  return periodic * lowCut * fh;
 }
 
 /**

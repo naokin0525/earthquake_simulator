@@ -24,6 +24,7 @@ import {
   DEFAULT_HYPOCENTER,
   shouldPlayEewWarningChime
 } from '../core/simulationState';
+import { generateAmbientNoiseLevels } from '../core/utils/colorUtils';
 import { formatEewWarningAnnouncement } from '../core/ui/EEWFormatter';
 import { StationLoader } from '../loaders/StationLoader';
 import { computeAmpFactorsFromTiles } from '../loaders/AmpFactorTileLoader';
@@ -60,6 +61,8 @@ interface SimulationContextValue {
   isSpeechEnabled: boolean;
   isSpeechSupported: boolean;
   isKyoshinMonitor: boolean;
+  ambientNoiseLevels: Float32Array | null;
+  ambientNoiseUpdatedAt: number | null;
   mapVersion: number;
   hasEpicenter: boolean;
   mapDisplayMode: MapDisplayMode;
@@ -105,6 +108,8 @@ export const SimulationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   const [milestones, setMilestones] = useState<SimulationMilestone[]>([]);
   const [isMeshVisible, setIsMeshVisible] = useState(false);
   const [isKyoshinMonitor, setIsKyoshinMonitor] = useState(false);
+  const [ambientNoiseLevels, setAmbientNoiseLevels] = useState<Float32Array | null>(null);
+  const [ambientNoiseUpdatedAt, setAmbientNoiseUpdatedAt] = useState<number | null>(null);
   const [mapVersion, setMapVersion] = useState(0);
   const [hasEpicenter, setHasEpicenter] = useState(false);
   const [mapDisplayMode, setMapDisplayMode] = useState<MapDisplayMode>('auto');
@@ -116,6 +121,24 @@ export const SimulationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   const stationStatesRef = useRef<Uint8Array>(new Uint8Array(0));
   const triggerEventsMapRef = useRef<Map<number, StationTriggerEvent>>(new Map());
   const eewReportRef = useRef<EEWReport | null>(null);
+
+  useEffect(() => {
+    const populationDensities = stationBuffer?.dailyNoise;
+    if (!isKyoshinMonitor || !populationDensities) {
+      setAmbientNoiseLevels(null);
+      setAmbientNoiseUpdatedAt(null);
+      return;
+    }
+
+    const updateAmbientNoise = () => {
+      setAmbientNoiseLevels(generateAmbientNoiseLevels(populationDensities));
+      setAmbientNoiseUpdatedAt(Date.now());
+    };
+
+    updateAmbientNoise();
+    const timer = setInterval(updateAmbientNoise, 1000);
+    return () => clearInterval(timer);
+  }, [isKyoshinMonitor, stationBuffer]);
 
   const clearReportState = useCallback(() => {
     eewReportRef.current = null;
@@ -276,7 +299,7 @@ export const SimulationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         );
         if (cancelled) return;
         buffer.ampFactors = computedAmpFactors;
-        // Load daily‑life noise values (if available).
+        // Keep population density for ambient display only.
         const dailyNoise = await loadDailyNoise(dataSet.totalStations);
         if (cancelled) return;
         buffer.dailyNoise = dailyNoise;
@@ -440,6 +463,8 @@ export const SimulationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         isSpeechEnabled,
         isSpeechSupported,
         isKyoshinMonitor,
+        ambientNoiseLevels,
+        ambientNoiseUpdatedAt,
         mapVersion,
         hasEpicenter,
         mapDisplayMode,

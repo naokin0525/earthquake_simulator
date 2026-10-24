@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useSimulation } from '../../hooks/useSimulation';
 import { StationTriggerEvent } from '../../core/types';
 
@@ -8,10 +8,23 @@ interface AmbientNoiseEntry {
 }
 
 export const StrongMotionMonitor: React.FC = () => {
-  const { stationBuffer, triggerEventsMap, isKyoshinMonitor } = useSimulation();
+  const {
+    stationBuffer,
+    triggerEventsMap,
+    isKyoshinMonitor,
+    ambientNoiseLevels,
+    ambientNoiseUpdatedAt
+  } = useSimulation();
   const [entries, setEntries] = useState<Array<{ index: number; intensity: string; pgv: number }>>([]);
-  const [ambientNoiseEntries, setAmbientNoiseEntries] = useState<AmbientNoiseEntry[]>([]);
-  const [noiseUpdatedAt, setNoiseUpdatedAt] = useState('');
+  const ambientNoiseEntries = useMemo<AmbientNoiseEntry[]>(() => {
+    const dailyNoise = stationBuffer?.dailyNoise;
+    if (!dailyNoise || !ambientNoiseLevels) return [];
+
+    return Array.from(dailyNoise, (density, index) => ({ index, density }))
+      .filter((entry) => Number.isFinite(entry.density) && entry.density > 0)
+      .sort((a, b) => b.density - a.density)
+      .slice(0, 200);
+  }, [stationBuffer, ambientNoiseLevels]);
 
   useEffect(() => {
     if (!isKyoshinMonitor) return;
@@ -21,19 +34,6 @@ export const StrongMotionMonitor: React.FC = () => {
         list.push({ index: idx, intensity: ev.intensity, pgv: ev.pgvSurface });
       });
       setEntries(list);
-      const dailyNoise = stationBuffer?.dailyNoise;
-      if (dailyNoise) {
-        setAmbientNoiseEntries(
-          Array.from(dailyNoise, (density, index) => ({ index, density }))
-            .filter((entry) => Number.isFinite(entry.density) && entry.density > 0)
-            .sort((a, b) => b.density - a.density)
-            .slice(0, 20)
-        );
-        setNoiseUpdatedAt(new Date().toLocaleTimeString());
-      } else {
-        setAmbientNoiseEntries([]);
-        setNoiseUpdatedAt('');
-      }
     };
     update();
     const timer = setInterval(update, 1000);
@@ -67,15 +67,16 @@ export const StrongMotionMonitor: React.FC = () => {
         Ambient noise inputs
       </h4>
       <p className="text-xs" style={{ margin: '0 0 6px', color: '#94a3b8' }}>
-        Station population density (people/km²), refreshed every second
-        {noiseUpdatedAt && ` · ${noiseUpdatedAt}`}
+        Population density (people/km²) and live noise level
+        {ambientNoiseUpdatedAt && ` · Updated ${new Date(ambientNoiseUpdatedAt).toLocaleTimeString()}`}
       </p>
       {ambientNoiseEntries.length > 0 ? (
         <table className="text-sm w-full">
           <thead>
             <tr>
               <th className="text-left">Station</th>
-              <th className="text-right">Noise input</th>
+              <th className="text-right">Density</th>
+              <th className="text-right">Noise</th>
             </tr>
           </thead>
           <tbody>
@@ -83,6 +84,7 @@ export const StrongMotionMonitor: React.FC = () => {
               <tr key={index}>
                 <td>{index}</td>
                 <td className="text-right">{density.toFixed(2)}</td>
+                <td className="text-right">{ambientNoiseLevels?.[index]?.toFixed(2) ?? '—'}</td>
               </tr>
             ))}
           </tbody>

@@ -70,6 +70,7 @@ export const MapContainer: React.FC = () => {
     earthquakeInfoReport,
     lpgmReport,
     isKyoshinMonitor,
+    ambientNoiseLevels,
     isMeshVisible,
     mapVersion,
     hasEpicenter,
@@ -368,6 +369,7 @@ export const MapContainer: React.FC = () => {
           stationBuffer,
           stationStates,
           triggerEventsMap,
+          ambientNoiseLevels,
           kyoshinMonitor: isKyoshinMonitor,
           mapVersion
         })
@@ -397,6 +399,7 @@ export const MapContainer: React.FC = () => {
     lpgmReport,
     mapDisplayMode,
     isKyoshinMonitor,
+    ambientNoiseLevels,
     isMeshVisible,
     mapVersion,
     hasEpicenter,

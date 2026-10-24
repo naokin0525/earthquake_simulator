@@ -124,7 +124,7 @@ export interface StationDataBuffer {
   lons: Float32Array;
   ampFactors: Float32Array;
   prefCodes: Uint8Array;
-  dailyNoise?: Float32Array;
+  dailyNoise?: Float32Array; // Population density (people/km²) for ambient display only.
 }
 
 export interface IntensityUpdate {

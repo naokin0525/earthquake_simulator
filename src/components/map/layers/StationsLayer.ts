@@ -8,7 +8,7 @@
 import { ScatterplotLayer } from '@deck.gl/layers';
 import { StationDataBuffer, StationState, JmaIntensityScale, StationTriggerEvent } from '../../../core/types';
 import { jmaScaleToNumeric } from '../../../core/physics/attenuation';
-import { getKyoshinColor } from '../../../core/utils/colorUtils';
+import { getKyoshinColor, populationDensityToAmbientIntensity } from '../../../core/utils/colorUtils';
 
 export interface StationLayerProps {
   id?: string;
@@ -17,6 +17,7 @@ export interface StationLayerProps {
   triggerEventsMap?: Map<number, StationTriggerEvent>;
   kyoshinMonitor?: boolean;
   mapVersion?: number;
+  ambientNoiseLevels?: Float32Array | null;
   onHover?: (info: any) => void;
 }
 
@@ -33,7 +34,16 @@ const JMA_COLOR_MAP: Record<number, [number, number, number, number]> = {
 };
 
 export function createStationsLayer(props: StationLayerProps): ScatterplotLayer {
-  const { stationBuffer, stationStates, triggerEventsMap, onHover, kyoshinMonitor, mapVersion, id = 'stations-layer' } = props;
+  const {
+    stationBuffer,
+    stationStates,
+    triggerEventsMap,
+    onHover,
+    kyoshinMonitor,
+    mapVersion,
+    ambientNoiseLevels,
+    id = 'stations-layer'
+  } = props;
 
   // Build station data items
   const data = new Array(stationBuffer.totalStations);
@@ -55,6 +65,10 @@ export function createStationsLayer(props: StationLayerProps): ScatterplotLayer 
         const ev = triggerEventsMap?.get(d);
         if (ev) {
           intensityVal = ev.instrumentalIntensity ?? ev.continuousIntensity ?? -3;
+        } else if (ambientNoiseLevels) {
+          intensityVal = ambientNoiseLevels[d] ?? -3;
+        } else if (stationBuffer.dailyNoise) {
+          intensityVal = populationDensityToAmbientIntensity(stationBuffer.dailyNoise[d]);
         }
         return getKyoshinColor(intensityVal);
       }
@@ -102,7 +116,7 @@ export function createStationsLayer(props: StationLayerProps): ScatterplotLayer 
     pickable: true,
     onHover,
     updateTriggers: {
-      getFillColor: [stationStates, triggerEventsMap, kyoshinMonitor, mapVersion, Date.now()],
+      getFillColor: [stationStates, triggerEventsMap, kyoshinMonitor, mapVersion, ambientNoiseLevels],
       getLineColor: [stationStates, kyoshinMonitor],
       getRadius: [stationStates, kyoshinMonitor, Date.now()],
       getLineWidth: [stationStates]

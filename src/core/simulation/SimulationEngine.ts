@@ -39,7 +39,6 @@ export class SimulationEngine {
   private hypocentralDists: Float32Array = new Float32Array(0);
   private slabFractions: Float32Array = new Float32Array(0);
   private stationStates: Uint8Array = new Uint8Array(0);
-  private dailyNoise: Float32Array = new Float32Array(0);
   private measuredPgvs: Float32Array = new Float32Array(0);
 
   constructor(stations: StationDataBuffer, private readonly slabModel?: Slab2Model) {
@@ -64,7 +63,6 @@ export class SimulationEngine {
     this.hypocentralDists = new Float32Array(N);
     this.slabFractions = new Float32Array(N);
     this.stationStates = new Uint8Array(N); // 0 = IDLE
-    this.dailyNoise = this.stations.dailyNoise?.length ? this.stations.dailyNoise : new Float32Array(N);
     this.measuredPgvs = new Float32Array(N);
 
     const hypo = config.hypocenter;
@@ -176,11 +174,11 @@ export class SimulationEngine {
           rSlab
         );
 
-        this.measuredPgvs[i] = pgvSurface + (this.dailyNoise[i] ?? 0);
+        this.measuredPgvs[i] = pgvSurface;
 
         // Placeholder conversion: in a demo model, acceleration is estimated by scaling PGV by 10,
         // which is sufficient for UI-level forecast behavior without implementing a full acceleration model.
-        const accelerationGal = (pgvSurface + (this.dailyNoise[i] ?? 0)) * 10;
+        const accelerationGal = pgvSurface * 10;
 
         newTriggers.push({
           stationIndex: i,
@@ -215,10 +213,10 @@ export class SimulationEngine {
           rSlab
         );
 
-        this.measuredPgvs[i] = pgvSurface + (this.dailyNoise[i] ?? 0);
+        this.measuredPgvs[i] = pgvSurface;
 
         // Reuse same placeholder conversion for acceleration (not used for S_ARRIVED events)
-        const accelerationGal = (pgvSurface + (this.dailyNoise[i] ?? 0)) * 10;
+        const accelerationGal = pgvSurface * 10;
 
         newTriggers.push({
           stationIndex: i,
