@@ -295,6 +295,95 @@ html {
 	left: 100%;
 }
 
+.startup-loading {
+	position: fixed;
+	inset: 0;
+	z-index: 1000;
+	display: grid;
+	place-items: center;
+	padding: 24px;
+	background: rgba(2, 6, 23, 0.94);
+}
+
+.startup-loading-panel {
+	width: min(100%, 420px);
+	padding: 28px;
+	border: 1px solid var(--panel-border);
+	border-radius: 16px;
+	background: var(--panel-bg);
+	box-shadow: 0 24px 80px rgba(0, 0, 0, 0.45);
+	text-align: center;
+}
+
+.startup-loading-panel h1 {
+	margin: 0 0 12px;
+	font-size: 20px;
+}
+
+.startup-loading-panel p {
+	color: #cbd5e1;
+	font-size: 14px;
+}
+
+.startup-progress-track {
+	height: 10px;
+	margin: 22px 0 12px;
+	overflow: hidden;
+	border-radius: 999px;
+	background: rgba(148, 163, 184, 0.22);
+}
+
+.startup-progress-fill {
+	height: 100%;
+	border-radius: inherit;
+	background: linear-gradient(90deg, #00cfff, #0077ff);
+	transition: width 180ms ease-out;
+}
+
+.startup-progress-fill.is-indeterminate {
+	width: 35%;
+	animation: startup-progress-indeterminate 1.2s ease-in-out infinite alternate;
+}
+
+.startup-loading-panel .startup-loading-count {
+	margin: 0;
+	color: #94a3b8;
+	font-size: 12px;
+	font-variant-numeric: tabular-nums;
+}
+
+.startup-loading-panel .startup-loading-error {
+	color: #fca5a5;
+	font-weight: 600;
+}
+
+.startup-loading-detail {
+	overflow-wrap: anywhere;
+	color: #cbd5e1;
+	font-size: 12px;
+}
+
+.startup-loading-retry {
+	margin-top: 12px;
+	padding: 10px 18px;
+	border: 0;
+	border-radius: 8px;
+	background: #0284c7;
+	color: white;
+	font: inherit;
+	font-weight: 600;
+	cursor: pointer;
+}
+
+@keyframes startup-progress-indeterminate {
+	from {
+		transform: translateX(-20%);
+	}
+	to {
+		transform: translateX(205%);
+	}
+}
+
 /* JMA intensity box */
 .jma-box {
 	width: 22px;

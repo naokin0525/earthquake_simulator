@@ -371,19 +371,18 @@ def main() -> None:
     )
     print(f"書き出し: {npz_path}")
 
-    if args.copy_to_public or os.path.abspath(out_csv) != os.path.abspath("public/data/station_density.csv"):
-        # public/data/ ディレクトリが存在していれば public/data/ にも併せて出力
-        public_csv = "public/data/station_density.csv"
-        public_npz = "public/data/station_density.npz"
-        if os.path.exists("public/data"):
-            result.to_csv(public_csv, index=False, encoding="utf-8")
-            np.savez(
-                public_npz,
-                lats=result["lat"].to_numpy(np.float32),
-                lons=result["lon"].to_numpy(np.float32),
-                density=result["population_density_km2"].to_numpy(np.float32),
-            )
-            print(f"書き出し (public): {public_csv} & {public_npz}")
+    public_csv = "public/data/station_density.csv"
+    public_npz = "public/data/station_density.npz"
+    if args.copy_to_public or os.path.abspath(out_csv) != os.path.abspath(public_csv):
+        os.makedirs(os.path.dirname(public_csv), exist_ok=True)
+        result.to_csv(public_csv, index=False, encoding="utf-8")
+        np.savez(
+            public_npz,
+            lats=result["lat"].to_numpy(np.float32),
+            lons=result["lon"].to_numpy(np.float32),
+            density=result["population_density_km2"].to_numpy(np.float32),
+        )
+        print(f"書き出し (public): {public_csv} & {public_npz}")
 
     print("\n--- 人口密度統計 (人/km^2) ---")
     print(result["population_density_km2"].describe())

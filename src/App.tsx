@@ -14,6 +14,7 @@ import { EEWHud } from './components/ui/EEWHud';
 import { Legend } from './components/ui/Legend';
 import { JmaTimeline } from './components/ui/JmaTimeline';
 import { StrongMotionMonitor } from './components/ui/StrongMotionMonitor';
+import { StartupLoadingScreen } from './components/ui/StartupLoadingScreen';
 
 export const App: React.FC = () => (
   <SimulationProvider>
@@ -29,6 +30,7 @@ export const App: React.FC = () => (
         <Legend />
         <StrongMotionMonitor />
       </div>
+      <StartupLoadingScreen />
     </div>
   </SimulationProvider>
 );

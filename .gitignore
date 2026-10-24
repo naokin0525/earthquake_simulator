@@ -37,6 +37,12 @@ public/data/*
 public/data/slab2/*
 !public/data/slab2/manifest.json
 !public/data/slab2/*.png
+!public/data/station_density.csv
+!public/tiles/
+public/tiles/*
+!public/tiles/mesh/
+public/tiles/mesh/*
+!public/tiles/mesh/manifest.json
 !data_references/
 data_references/*
 !data_references/slab2/

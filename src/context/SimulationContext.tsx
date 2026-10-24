@@ -27,13 +27,19 @@ import {
 import { formatEewWarningAnnouncement } from '../core/ui/EEWFormatter';
 import { StationLoader } from '../loaders/StationLoader';
 import { computeAmpFactorsFromTiles } from '../loaders/AmpFactorTileLoader';
+import { preloadMeshTiles, type MeshTileLoadProgress } from '../loaders/MeshTileLoader';
 import { loadDailyNoise } from '../loaders/NoiseLoader';
 import { audioAlertSystem } from '../utils/audioAlert';
 
 export type MapDisplayMode = 'auto' | 'eew' | 'flash' | 'detail' | 'lpgm' | 'off';
+export type StartupPhase = 'tiles' | 'stations' | 'worker';
 
 interface SimulationContextValue {
   isReady: boolean;
+  startupPhase: StartupPhase;
+  startupProgress: MeshTileLoadProgress;
+  startupError: string | null;
+  retryStartup: () => void;
   isPlaying: boolean;
   simTime: number;
   pRadiusKm: number;
@@ -81,6 +87,10 @@ export const SimulationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   const workerRef = useRef<Worker | null>(null);
 
   const [isReady, setIsReady] = useState(false);
+  const [startupPhase, setStartupPhase] = useState<StartupPhase>('tiles');
+  const [startupProgress, setStartupProgress] = useState<MeshTileLoadProgress>({ completed: 0, total: 0 });
+  const [startupError, setStartupError] = useState<string | null>(null);
+  const [startupAttempt, setStartupAttempt] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [simTime, setSimTime] = useState(0.0);
   const [pRadiusKm, setPRadiusKm] = useState(0.0);
@@ -135,11 +145,13 @@ export const SimulationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
 
     switch (msg.type) {
       case 'READY':
+        setStartupPhase('worker');
         setIsReady(true);
         break;
 
       case 'ERROR':
         console.error('[SimulationContext] Simulation worker error:', msg.payload.message);
+        setStartupError(`Simulation worker failed: ${msg.payload.message}`);
         setIsReady(false);
         break;
 
@@ -210,9 +222,41 @@ export const SimulationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     }
   }, [updateFps]);
 
+  const retryStartup = useCallback(() => {
+    setIsReady(false);
+    setStartupError(null);
+    setStartupPhase('tiles');
+    setStartupProgress({ completed: 0, total: 0 });
+    setStartupAttempt((attempt) => attempt + 1);
+  }, []);
+
   useEffect(() => {
-    StationLoader.loadStations('/data/stations/stations.bin', '/data/stations/stations_meta.json')
-      .then(async (dataSet) => {
+    let cancelled = false;
+    const abortController = new AbortController();
+    let startupWorker: Worker | null = null;
+
+    const initialize = async () => {
+      setIsReady(false);
+      setStartupError(null);
+      setStartupPhase('tiles');
+      setStartupProgress({ completed: 0, total: 0 });
+
+      try {
+        await preloadMeshTiles(
+          (progress) => {
+            if (!cancelled) setStartupProgress(progress);
+          },
+          abortController.signal
+        );
+        if (cancelled) return;
+
+        setStartupPhase('stations');
+        const dataSet = await StationLoader.loadStations(
+          '/data/stations/stations.bin',
+          '/data/stations/stations_meta.json'
+        );
+        if (cancelled) return;
+
         // Initial buffer without ampFactors; we'll compute amplification from tiles.
         const buffer: StationDataBuffer = {
           totalStations: dataSet.totalStations,
@@ -230,9 +274,11 @@ export const SimulationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
           undefined,
           dataSet.ampFactors
         );
+        if (cancelled) return;
         buffer.ampFactors = computedAmpFactors;
         // Load daily‑life noise values (if available).
         const dailyNoise = await loadDailyNoise(dataSet.totalStations);
+        if (cancelled) return;
         buffer.dailyNoise = dailyNoise;
 
         setStationBuffer(buffer);
@@ -242,20 +288,34 @@ export const SimulationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
           type: 'module'
         });
 
+        startupWorker = worker;
         workerRef.current = worker;
         worker.onmessage = handleWorkerMessage;
+        worker.onerror = (event) => {
+          console.error('[SimulationContext] Simulation worker failed:', event.message);
+          setStartupError(`Simulation worker failed: ${event.message}`);
+          setIsReady(false);
+        };
+        setStartupPhase('worker');
         worker.postMessage({ type: 'INIT_STATIONS', payload: buffer });
-      })
-      .catch((err) => {
-        console.warn('[SimulationContext] Station binary load fallback or missing:', err);
-      });
-
-    return () => {
-      if (workerRef.current) {
-        workerRef.current.terminate();
+      } catch (error) {
+        if (cancelled) return;
+        console.error('[SimulationContext] Startup initialization failed:', error);
+        setStartupError(error instanceof Error ? error.message : String(error));
       }
     };
-  }, [handleWorkerMessage]);
+
+    void initialize();
+
+    return () => {
+      cancelled = true;
+      abortController.abort();
+      if (startupWorker) {
+        startupWorker.terminate();
+        if (workerRef.current === startupWorker) workerRef.current = null;
+      }
+    };
+  }, [handleWorkerMessage, startupAttempt]);
 
   const postWorkerAction = (action: WorkerInboundAction) => {
     if (workerRef.current) {
@@ -356,6 +416,10 @@ export const SimulationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     <SimulationContext.Provider
       value={{
         isReady,
+        startupPhase,
+        startupProgress,
+        startupError,
+        retryStartup,
         isPlaying,
         simTime,
         pRadiusKm,

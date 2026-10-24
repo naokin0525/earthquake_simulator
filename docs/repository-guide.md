@@ -46,7 +46,7 @@ data directories.
 | `src/core/utils/eewUtils.ts` | EEW-specific utility functions |
 | `src/core/viz/MapLayers.ts` | Shared map visualization layer definitions |
 | `src/loaders/AmpFactorTileLoader.ts` | Loads amplification-factor mesh tiles |
-| `src/loaders/NoiseLoader.ts` | Loads station noise/density data |
+| `src/loaders/NoiseLoader.ts` | Loads and validates station density data from `/data/station_density.csv` |
 | `src/loaders/StationLoader.ts` | Loads station coordinates, metadata, and binary data |
 | `src/utils/audioAlert.ts` | Plays browser audio alerts |
 | `src/workers/simulation.worker.ts` | Runs simulation updates away from the UI thread |
@@ -85,6 +85,7 @@ Tests are grouped by behavior area and use Vitest. Keep test files under
 | `public/data/slab2/izu_dep.png`, `izu_thk.png` | Izu-Bonin slab depth and thickness rasters |
 | `public/data/slab2/kur_dep.png`, `kur_thk.png` | Kuril/Japan slab depth and thickness rasters |
 | `public/data/slab2/ryu_dep.png`, `ryu_thk.png` | Ryukyu/Nankai slab depth and thickness rasters |
+| `public/tiles/mesh/manifest.json` | Generated inventory of all mesh PNGs; used to preload and report startup progress |
 | `logo/epicenter.svg` | Source artwork for the epicenter marker; `public/logo/` is the served runtime copy |
 | `docs/slab2-pipeline.md` | Slab2 input format, generation command, and raster encoding notes |
 
@@ -93,6 +94,12 @@ and mesh files at the URL paths used by the loaders and map layers (for example
 `/data/stations/`, `/data/prefectures.geojson`, `/data/boundaries/`, and
 `/tiles/mesh/`). These larger/generated files are intentionally kept out of
 version control.
+Generate or refresh the mesh inventory after changing the available tile set
+with `python scripts/generate_mesh_tiles.py --manifest-only`. The normal mesh
+tile generation command writes the same inventory automatically. On startup,
+the application loads every PNG listed in the inventory before enabling the
+map and reports any missing or invalid tile in its loading screen. The PNGs
+remain generated, ignored assets; deploy them alongside the versioned manifest.
 
 ## Root configuration
 
@@ -126,8 +133,8 @@ application source. The individual input files have distinct roles:
 | `data_references/slab2/kur_slab2_dep_02.24.18.xyz`, `kur_slab2_thk_02.24.18.xyz` | Kuril/Japan slab depth and thickness source grids |
 | `data_references/slab2/ryu_slab2_dep_02.26.18.xyz`, `ryu_slab2_thk_02.26.18.xyz` | Ryukyu/Nankai slab depth and thickness source grids |
 | `station_noise/raw/T001101_*.zip` | Raw Statistics Bureau population mesh archives downloaded by `scripts/download_population.py` |
-| `station_noise/prepared/station_density.csv`, `station_density.npz` | Prepared station-density data consumed by the application |
-| `public/data/` and `public/tiles/` | Prepared browser-served datasets and map tiles, except the checked-in Slab2 assets |
+| `station_noise/prepared/station_density.csv`, `station_density.npz` | Prepared station-density source outputs; the preparation script also publishes the browser CSV under `public/data/` |
+| `public/data/` and `public/tiles/` | Prepared browser-served datasets, including `station_density.csv`, and tile PNGs, except the checked-in Slab2 assets and mesh inventory |
 | `build/` and `dist/` | Generated build output; regenerate with the project build command |
 | `.claude/worktrees/` | Local nested worktrees; not part of the application source tree |
 

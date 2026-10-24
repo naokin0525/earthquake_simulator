@@ -18,6 +18,11 @@ Run the unit tests with `npm test` and create a production build with
 The full map also uses prepared geographic and station data that is not
 committed to this repository. See [the repository guide](docs/repository-guide.md)
 for the source map, data locations, and the role of each project file.
+At startup, the app preloads all ground-amplification tiles listed in
+`public/tiles/mesh/manifest.json` and shows their progress; deploy the matching
+PNG files alongside the manifest.
+Station-density data prepared by `scripts/prepare_population_density.py` is
+published to `public/data/station_density.csv` and loaded from that URL at startup.
 
 ## Project map
 
@@ -31,4 +36,3 @@ for the source map, data locations, and the role of each project file.
 | `station_noise/` | Prepared station-density inputs (not committed) |
 | `docs/` | Technical notes and the detailed repository/file guide |
 | `build/`, `dist/` | Generated output; do not edit by hand |
-

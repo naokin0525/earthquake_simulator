@@ -46,6 +46,7 @@ Outputs:
 import os
 import sys
 import math
+import json
 import argparse
 import numpy as np
 import pandas as pd
@@ -241,6 +242,26 @@ def generate_tiles_fast(lat, lon, r_channel, g_channel, b_channel, min_zoom=5, m
                 img.save(tile_path, "PNG", compress_level=6)
 
     print(f"[SUCCESS] Tile pyramid generation complete in {output_dir}")
+    write_tile_manifest(output_dir)
+
+def write_tile_manifest(output_dir):
+    """Write the inventory consumed by the browser startup tile loader."""
+    tiles = []
+    for root, _, filenames in os.walk(output_dir):
+        for filename in filenames:
+            if filename.lower().endswith(".png"):
+                path = os.path.relpath(os.path.join(root, filename), output_dir)
+                tiles.append(path.replace(os.sep, "/"))
+
+    tiles.sort()
+    if not tiles:
+        raise ValueError(f"No mesh PNG tiles found in {output_dir}")
+
+    manifest_path = os.path.join(output_dir, "manifest.json")
+    with open(manifest_path, "w", encoding="utf-8") as manifest:
+        json.dump({"tiles": tiles}, manifest, indent=2)
+        manifest.write("\n")
+    print(f"[SUCCESS] Wrote {len(tiles)} tile paths to {manifest_path}")
 
 def read_mesh_csv_robust(input_csv: str) -> pd.DataFrame:
     """Reads mesh CSV file, extracting headers even if prefixed with comment character '#'."""
@@ -336,7 +357,12 @@ def main():
     parser.add_argument("--output", "-o", type=str, default="public/tiles/mesh", help="Output directory for XYZ tile pyramid.")
     parser.add_argument("--min-zoom", type=int, default=5, help="Minimum zoom level (default: 5).")
     parser.add_argument("--max-zoom", type=int, default=10, help="Maximum zoom level (default: 10).")
+    parser.add_argument("--manifest-only", action="store_true", help="Regenerate the tile inventory without rebuilding the PNGs.")
     args = parser.parse_args()
+
+    if args.manifest_only:
+        write_tile_manifest(args.output)
+        return
 
     input_file = args.input
     if input_file == "input_data/jshis_mesh_250m.csv" and not os.path.exists(input_file):

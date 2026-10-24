@@ -5,7 +5,8 @@
  * and EEW System Estimated P/S wave circles.
  */
 
-import { PolygonLayer } from '@deck.gl/layers';
+import { CompositeLayer, type DefaultProps, type Layer } from '@deck.gl/core';
+import { PathLayer } from '@deck.gl/layers';
 import { EEWReport, EarthquakeHypocenter } from '../../../core/types';
 
 export type WaveFrontLayerProps = {
