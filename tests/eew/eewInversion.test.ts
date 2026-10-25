@@ -146,11 +146,14 @@ describe('EEW Inversion & Warning Alert Engine', () => {
     const lons = new Float32Array([139.6, 139.4]);
     const amps = new Float32Array([1.5, 1.8]);
 
-    const report = eewEngine.update(triggerEvents, lats, lons, amps);
+    const forecastReport = eewEngine.update([triggerEvents[0]], lats, lons, amps, 3.0);
+    expect(forecastReport).not.toBeNull();
+    expect(forecastReport!.isWarning).toBe(false);
 
-    expect(report).not.toBeNull();
-    expect(report!.reportNumber).toBe(1);
-    expect(report!.isWarning).toBe(true);
-    expect(report!.warnedPrefectures.length).toBe(47);
+    const warningReport = eewEngine.update([triggerEvents[1]], lats, lons, amps, 5.0);
+    expect(warningReport).not.toBeNull();
+    expect(warningReport!.reportNumber).toBe(2);
+    expect(warningReport!.isWarning).toBe(true);
+    expect(warningReport!.warnedPrefectures.length).toBe(47);
   });
 });

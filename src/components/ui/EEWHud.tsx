@@ -144,11 +144,21 @@ export const EEWHud: React.FC = () => {
           </div>
           {eewReport.isWarning && eewReport.warnedPrefectures.some((p) => p.isWarning) && (
             <div style={{ marginTop: '4px', fontSize: '11px', textAlign: 'left', background: 'rgba(0,0,0,0.3)', padding: '4px 6px', borderRadius: '4px' }}>
-              <span style={{ color: '#fca5a5', fontWeight: 'bold' }}>警報対象地域 (震度4以上予想):</span>
+              <span style={{ color: '#fca5a5', fontWeight: 'bold' }}>警報対象地域 (震度4以上 / 長周期階級3以上予想):</span>
               <br />
               {eewReport.warnedPrefectures
                 .filter((p) => p.isWarning)
-                .map((p) => p.prefName)
+                .map((p) => `${p.prefName} (震度${INTENSITY_LABELS[p.maxPredictedIntensity]}${p.maxPredictedLpgmClass >= 3 ? ` / 長周期階級${p.maxPredictedLpgmClass}` : ''})`)
+                .join('、')}
+            </div>
+          )}
+          {eewReport.warnedPrefectures.some((p) => p.isForecast && !p.isWarning) && (
+            <div style={{ marginTop: '4px', fontSize: '11px', textAlign: 'left', background: 'rgba(0,0,0,0.2)', padding: '4px 6px', borderRadius: '4px' }}>
+              <span style={{ color: '#fde68a', fontWeight: 'bold' }}>予報対象地域 (震度3以上 / 長周期階級1以上予想):</span>
+              <br />
+              {eewReport.warnedPrefectures
+                .filter((p) => p.isForecast && !p.isWarning)
+                .map((p) => `${p.prefName} (震度${INTENSITY_LABELS[p.maxPredictedIntensity]}${p.maxPredictedLpgmClass >= 1 ? ` / 長周期階級${p.maxPredictedLpgmClass}` : ''})`)
                 .join('、')}
             </div>
           )}

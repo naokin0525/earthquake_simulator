@@ -17,8 +17,8 @@ const report: EEWReport = {
   triggeredStationCount: 8,
   maxPredictedIntensity: '5-',
   warnedPrefectures: [
-    { prefCode: 13, prefName: '東京都', maxPredictedIntensity: '5-', isWarning: true },
-    { prefCode: 14, prefName: '神奈川県', maxPredictedIntensity: '4', isWarning: false }
+    { prefCode: 13, prefName: '東京都', maxPredictedIntensity: '5-', maxPredictedLpgmClass: 0, isWarning: true },
+    { prefCode: 14, prefName: '神奈川県', maxPredictedIntensity: '4', maxPredictedLpgmClass: 0, isWarning: false }
   ]
 };
 

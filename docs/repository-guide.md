@@ -136,8 +136,7 @@ Provides the point-source distance passed to attenuation calculations. Because t
 
 Implements a Si & Midorikawa (1999)-form bedrock PGV model, a time envelope, and predicted continuous JMA intensity. With fault distance `R` in km, mean fault depth `D` in km, magnitude `Mw`, and slab-path fraction `r` clamped to `[0,1]`, the implemented relation is:
 
-`log10(PGV600) = 0.58 Mw + 0.0038 D + C - 1.29`
-`                  - log10(R + 0.0028 * 10^(0.50 Mw)) - 0.002 R + 0.12 r`
+`log10(PGV600) = 0.58 Mw + 0.0038 D + C - 1.29 - log10(R + 0.0028 * 10^(0.50 Mw)) - 0.002 R + 0.12 r`
 
 where `C` is `0.00` for crustal, `-0.02` for interplate, or `+0.12` for intraplate events, and `PGV600 = 10^(right-hand side)` cm/s. If no fault type is supplied, depth provides a fallback classification (`<30 km` crustal, `30–<60 km` interplate, and `>=60 km` intraplate). The point-source model uses hypocentral distance for `R`, not a modeled fault-plane distance.
 
@@ -173,7 +172,11 @@ Decodes Slab2 depth/thickness rasters and manifest metadata, exposes depth areas
 
 ### `src/core/physics/arvResolver.js`
 
-Contains a standalone Web Mercator tile-coordinate and pixel-sampling helper. Its current example decoder uses only the red channel: `ARV = 0.5 + (R/255) * 2.5`; the green and blue channels are read but do not affect the result. The file describes this encoding as a placeholder, and it is not imported elsewhere under `src/`, so it should not be mistaken for the production station amplification path or the AVS30 formula in `siteResponse.ts`.
+Contains a standalone Web Mercator tile-coordinate and pixel-sampling helper. Its current example decoder uses only the red channel: 
+
+`ARV = 0.5 + (R/255) * 2.5`
+
+the green and blue channels are read but do not affect the result. The file describes this encoding as a placeholder, and it is not imported elsewhere under `src/`, so it should not be mistaken for the production station amplification path or the AVS30 formula in `siteResponse.ts`.
 
 ## `src/core/ui/`, `src/core/utils/`, and `src/core/viz/`
 

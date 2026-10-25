@@ -194,33 +194,20 @@ export class EEWEngine {
        return null;
      }
 
-     // Warning condition (including LPGM >=3) with depth and observation‑count restrictions
+     // Public warnings require multi-station validation and either of the warning thresholds.
      const hasMultiStationValidation = this.triggeredObservations.length >= 2;
      const isIntensityThresholdMet = isJmaGreaterOrEqual(maxPredictedIntensity, '5-');
-
-     // Determine LPGM contribution eligibility for Warning
-     let lpgmWarningEligible = false;
-     if (maxLpgmClass >= 3 && estHypo.depth <= 150) {
-       const firstTriggerTime = this.triggeredObservations[0]?.tObs ?? currentTime;
-       const elapsedSinceFirst = currentTime - firstTriggerTime;
-       if (!(this.triggeredObservations.length < 3 && elapsedSinceFirst < 15)) {
-         lpgmWarningEligible = true;
-       }
-     }
-
-     let isWarningAlertNeeded = false;
-     if (hasMultiStationValidation && (isIntensityThresholdMet || lpgmWarningEligible)) {
-       isWarningAlertNeeded = true;
-     }
+     const isLpgmWarningThresholdMet = maxLpgmClass >= 3;
+     const isWarningAlertNeeded = hasMultiStationValidation &&
+       (isIntensityThresholdMet || isLpgmWarningThresholdMet);
 
      if (isWarningAlertNeeded) {
        this.isWarningIssued = true;
      }
      const overallIsWarning = this.isWarningIssued;
 
-     // Construct prefecture warnings with official JMA criteria:
-     // When a warning is active, all prefectures with predicted intensity >= 4 (or LPGM >= 3) are subject to WARNING.
-     // Other prefectures with predicted intensity >= 3 are FORECAST.
+     // Public warning regions include predicted intensity >= 4 or LPGM class >= 3.
+     // Forecast regions include predicted intensity >= 3 or LPGM class >= 1.
      const prefectureWarnings: PrefectureWarning[] = prefEvals.map((p) => {
        const isPrefWarning = overallIsWarning && (isJmaGreaterOrEqual(p.jmaScale, '4') || p.lpgmClass >= 3);
        const isPrefForecast = isJmaGreaterOrEqual(p.jmaScale, '3') || p.lpgmClass >= 1;
@@ -229,6 +216,7 @@ export class EEWEngine {
          prefCode: p.code,
          prefName: p.name,
          maxPredictedIntensity: p.jmaScale,
+         maxPredictedLpgmClass: p.lpgmClass,
          isWarning: isPrefWarning,
          isForecast: isPrefForecast
        };

@@ -552,7 +552,8 @@ export const MapContainer: React.FC = () => {
                   <div>
                     EEW予測:{' '}
                     <span className={w.isWarning ? 'font-bold text-rose-400' : 'text-amber-300'}>
-                      {w.isWarning ? '【警報】' : w.isForecast ? '【予報】' : '平常'} (予想震度 {w.maxPredictedIntensity})
+                      {w.isWarning ? '【警報】' : w.isForecast ? '【予報】' : '平常'} (予想震度 {w.maxPredictedIntensity}
+                      {w.maxPredictedLpgmClass > 0 ? ` / 長周期階級${w.maxPredictedLpgmClass}` : ''})
                     </span>
                   </div>
                 )}

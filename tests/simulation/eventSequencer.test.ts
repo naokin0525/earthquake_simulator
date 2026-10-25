@@ -30,7 +30,7 @@ function stationTrigger(
 }
 
 describe('EventSequencer reports', () => {
-  it('builds a regional intensity report from at least 50 distinct S-wave arrivals', () => {
+  it('issues a regional intensity report at 90 seconds for observed intensity 3+', () => {
     const sequencer = new EventSequencer();
     const prefCodes = new Uint8Array(51).fill(13);
     prefCodes.fill(14, 25, 50);
@@ -39,12 +39,14 @@ describe('EventSequencer reports', () => {
     );
     triggers.push(stationTrigger(50, StationState.P_TRIGGERED, '7'));
 
-    const result = sequencer.update(12, 51, null, hypocenter, triggers, prefCodes);
+    sequencer.update(12, 51, null, hypocenter, triggers, prefCodes);
+    expect(sequencer.update(89, 51, null, hypocenter, [], prefCodes).event).toBeUndefined();
+    const result = sequencer.update(90, 51, null, hypocenter, [], prefCodes);
 
     expect(result.event?.type).toBe('FLASH_REPORT');
     const report = result.event?.type === 'FLASH_REPORT' ? result.event.payload : undefined;
     expect(report).toMatchObject({
-      issuedTime: 12,
+      issuedTime: 90,
       intensities: {
         '4': ['東京都'],
         '5-': ['神奈川県']
@@ -54,16 +56,16 @@ describe('EventSequencer reports', () => {
     expect(report?.summary).toContain('2都道府県');
   });
 
-  it('does not issue an intensity report for P-wave triggers or fewer than 50 S arrivals', () => {
+  it('does not issue an intensity report when observed shaking is below intensity 3', () => {
     const sequencer = new EventSequencer();
     const prefCodes = new Uint8Array(50).fill(13);
     const triggers = Array.from({ length: 49 }, (_, index) =>
-      stationTrigger(index, StationState.S_ARRIVED, '3')
+      stationTrigger(index, StationState.S_ARRIVED, '2')
     );
     triggers.push(stationTrigger(49, StationState.P_TRIGGERED, '5-'));
 
     const lowMagnitudeHypocenter = { ...hypocenter, magnitude: 6.0 };
-    const result = sequencer.update(12, 50, null, lowMagnitudeHypocenter, triggers, prefCodes);
+    const result = sequencer.update(90, 50, null, lowMagnitudeHypocenter, triggers, prefCodes);
 
     expect(result.event).toBeUndefined();
     expect(result.milestone).toBeUndefined();
@@ -78,9 +80,13 @@ describe('EventSequencer reports', () => {
       depth: 10,
       magnitude: 9
     };
+    const prefCodes = new Uint8Array([1]);
+    const observedIntensity = [stationTrigger(0, StationState.S_ARRIVED, '1')];
 
-    sequencer.update(180, 0, null, northernHypocenter, [], new Uint8Array());
-    const result = sequencer.update(300, 0, null, northernHypocenter, [], new Uint8Array());
+    sequencer.update(10, 1, null, northernHypocenter, observedIntensity, prefCodes);
+    sequencer.update(180, 1, null, northernHypocenter, observedIntensity, prefCodes);
+    expect(sequencer.update(599, 1, null, northernHypocenter, [], prefCodes).event).toBeUndefined();
+    const result = sequencer.update(600, 1, null, northernHypocenter, [], prefCodes);
     const report = result.event?.type === 'LPGM_REPORT' ? result.event.payload : undefined;
     const affectedPrefectures = report?.affectedPrefectures ?? [];
     const expected = Object.entries(PREFECTURE_CENTROIDS)
@@ -110,8 +116,8 @@ describe('EventSequencer reports', () => {
     // Prime with arrival
     sequencer.update(10, 1, null, hypocenter, triggers, prefCodes);
 
-    // Flash report at ~70s
-    const flashResult = sequencer.update(75, 1, null, hypocenter, [], prefCodes);
+    // Flash report at ~90s
+    const flashResult = sequencer.update(90, 1, null, hypocenter, [], prefCodes);
     expect(flashResult.event?.type).toBe('FLASH_REPORT');
 
     // Earthquake info report at ~180s
@@ -123,5 +129,12 @@ describe('EventSequencer reports', () => {
     expect(report?.epicenterName).toBeDefined();
     expect(report?.maxIntensity).toBe('5-');
     expect(report?.prefectures.some((p) => p.prefName === '東京都')).toBe(true);
+  });
+
+  it('does not issue detailed earthquake information without intensity 1+ or an EEW warning', () => {
+    const sequencer = new EventSequencer();
+    const result = sequencer.update(180, 0, null, hypocenter, [], new Uint8Array());
+
+    expect(result.event).toBeUndefined();
   });
 });

@@ -96,6 +96,7 @@ export interface PrefectureWarning {
   prefCode: number;
   prefName: string;
   maxPredictedIntensity: JmaIntensityScale;
+  maxPredictedLpgmClass: 0 | 1 | 2 | 3 | 4;
   isWarning: boolean; // True if警報対象 (気象庁: 全体で5弱以上予想時、震度4以上が予想される地域)
   isForecast?: boolean; // True if予報対象 (震度3以上が予想される地域)
 }

@@ -125,27 +125,26 @@ export class EventSequencer {
       };
     }
 
-    // 5. 震度速報 (Intensity Flash Report): JMA standard is approx. 1.5 - 2 minutes (~70 - 100s) or upon 50+ S-wave arrivals
-    if ((simTime >= 70.0 || this.sArrivedStations.size >= 50) && !this.isFlashReportIssued) {
-      const hasIntensity3Plus = Array.from(this.maxIntensityByPrefecture.values()).some((int) =>
-        isJmaGreaterOrEqual(int, '3')
-      );
-
-      if (hasIntensity3Plus || this.sArrivedStations.size >= 50 || simTime >= 110.0) {
-        const report = this.generateFlashReport(simTime);
-        if (report) {
-          this.isFlashReportIssued = true;
-          this.emitMilestone('FLASH_REPORT', simTime, '震度速報 (約1分半後)');
-          return {
-            event: { type: 'FLASH_REPORT', payload: report },
-            milestone: this.milestones.get('FLASH_REPORT')!
-          };
-        }
+    // 5. 震度速報: issue around 90 seconds only when intensity 3 or higher was observed.
+    if (simTime >= 90.0 && !this.isFlashReportIssued && this.hasObservedIntensityAtLeast('3')) {
+      const report = this.generateFlashReport(simTime);
+      if (report) {
+        this.isFlashReportIssued = true;
+        this.emitMilestone('FLASH_REPORT', simTime, '震度速報 (約1分半後)');
+        return {
+          event: { type: 'FLASH_REPORT', payload: report },
+          milestone: this.milestones.get('FLASH_REPORT')!
+        };
       }
     }
 
-    // 6. 震源・震度情報 (Earthquake and Intensity Information): JMA standard is approx. 3 - 5 minutes (~180 - 240s)
-    if (simTime >= 180.0 && hypo && !this.isEarthquakeInfoIssued) {
+    // 6. 震源・震度情報: issue within a few minutes for intensity 1+ or an EEW public warning.
+    if (
+      simTime >= 180.0 &&
+      hypo &&
+      !this.isEarthquakeInfoIssued &&
+      (this.hasObservedIntensityAtLeast('1') || eewReport?.isWarning)
+    ) {
       const report = this.generateEarthquakeInfoReport(simTime, hypo);
       this.isEarthquakeInfoIssued = true;
       this.emitMilestone('EARTHQUAKE_INFO', simTime, '震源・震度情報 (約3分後)');
@@ -155,13 +154,17 @@ export class EventSequencer {
       };
     }
 
-    // 7. 長周期地震動に関する観測情報 (LPGM Report): JMA standard is approx. 10 minutes (~300 - 600s)
-    // Only issued for M >= 6.5 and depth <= 100km after wave propagation has completed
-    if (simTime >= 300.0 && hypo && hypo.magnitude >= 6.5 && hypo.depth <= 100 && !this.isLpgmReportIssued) {
+    // 7. 長周期地震動に関する観測情報: issue around 10 minutes for observed intensity 1+ and LPGM class 1+.
+    if (
+      simTime >= 600.0 &&
+      hypo &&
+      !this.isLpgmReportIssued &&
+      this.hasObservedIntensityAtLeast('1')
+    ) {
       const report = this.generateLpgmReport(simTime, hypo);
-      this.isLpgmReportIssued = true;
       if (report.affectedPrefectures.length > 0) {
-        this.emitMilestone('LPGM_REPORT', simTime, '長周期地震動に関する観測情報 (約5分後)');
+        this.isLpgmReportIssued = true;
+        this.emitMilestone('LPGM_REPORT', simTime, '長周期地震動に関する観測情報 (約10分後)');
         return {
           event: { type: 'LPGM_REPORT', payload: report },
           milestone: this.milestones.get('LPGM_REPORT')!
@@ -180,6 +183,12 @@ export class EventSequencer {
     }
 
     return {};
+  }
+
+  private hasObservedIntensityAtLeast(threshold: JmaIntensityScale): boolean {
+    return Array.from(this.maxIntensityByPrefecture.values()).some((intensity) =>
+      isJmaGreaterOrEqual(intensity, threshold)
+    );
   }
 
   private emitMilestone(type: SimulationMilestoneType, time: number, label: string): { milestone: SimulationMilestone } {
