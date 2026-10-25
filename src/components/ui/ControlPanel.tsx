@@ -14,6 +14,10 @@ export const ControlPanel: React.FC = () => {
     hypocenter,
     isKyoshinMonitor,
     toggleKyoshinMonitor,
+    isFaultVisible,
+    toggleFaultVisible,
+    isArvVisible,
+    toggleArvVisible,
     play,
     pause,
     reset,
@@ -140,6 +144,27 @@ export const ControlPanel: React.FC = () => {
       <button id="kyoshin-btn" className="btn" onClick={toggleKyoshinMonitor}>
         {isKyoshinMonitor ? 'OFF' : '強震モニター'}
       </button>
+
+      <div className="map-overlay-toggles" aria-label="地図レイヤー">
+        <button
+          id="fault-toggle"
+          className="btn btn-secondary"
+          type="button"
+          onClick={toggleFaultVisible}
+          aria-pressed={isFaultVisible}
+        >
+          断層表示: {isFaultVisible ? 'ON' : 'OFF'}
+        </button>
+        <button
+          id="arv-toggle"
+          className="btn btn-secondary"
+          type="button"
+          onClick={toggleArvVisible}
+          aria-pressed={isArvVisible}
+        >
+          ARV表示: {isArvVisible ? 'ON' : 'OFF'}
+        </button>
+      </div>
 
       <div className="control-toggles">
         <button

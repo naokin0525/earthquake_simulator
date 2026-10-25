@@ -9,14 +9,15 @@
 import React, { useEffect, useRef, useState, useMemo } from 'react';
 import maplibregl from 'maplibre-gl';
 import DeckGL from '@deck.gl/react';
-import { GeoJsonLayer, PathLayer } from '@deck.gl/layers';
+import { BitmapLayer, GeoJsonLayer } from '@deck.gl/layers';
 import { useSimulation } from '../../hooks/useSimulation';
 import { createStationsLayer } from './layers/StationsLayer';
 import { createWaveFrontLayers } from './layers/WaveFrontLayer';
 import { createHypocenterLayers } from './layers/HypocenterLayer';
 import { createMeshIntensityLayer } from './layers/MeshIntensityLayer';
+import { createGroundAmplificationLayer } from './layers/GroundAmplificationLayer';
 import { StationLoader } from '../../loaders/StationLoader';
-import { Slab2Model, type SlabDepthContour } from '../../core/physics/slabModel';
+import { Slab2Model, type SlabDepthArea } from '../../core/physics/slabModel';
 
 // Initial map view state focused on Japan
 const INITIAL_VIEW_STATE = {
@@ -55,7 +56,7 @@ export const MapContainer: React.FC = () => {
   const [hoverInfo, setHoverInfo] = useState<any>(null);
   const [stationMetadataMap, setStationMetadataMap] = useState<Map<number, any>>(new Map());
   const [selectedStationIndex, setSelectedStationIndex] = useState<number | null>(null);
-  const [slabDepthContours, setSlabDepthContours] = useState<SlabDepthContour[]>([]);
+  const [slabDepthAreas, setSlabDepthAreas] = useState<SlabDepthArea[]>([]);
 
   const {
     stationBuffer,
@@ -72,6 +73,8 @@ export const MapContainer: React.FC = () => {
     isKyoshinMonitor,
     ambientNoiseLevels,
     isMeshVisible,
+    isFaultVisible,
+    isArvVisible,
     mapVersion,
     hasEpicenter,
     mapDisplayMode,
@@ -133,13 +136,25 @@ export const MapContainer: React.FC = () => {
   useEffect(() => {
     Slab2Model.load()
       .then((slabModel) => {
-        setSlabDepthContours(slabModel.getDepthContours([30, 60, 90, 120, 150, 180, 220]));
+        setSlabDepthAreas(slabModel.getDepthAreas());
       })
       .catch((error: unknown) => {
-        console.error('Failed to load Slab2 depth contours', error);
-        setSlabDepthContours([]);
+        console.error('Failed to load filled slab depth areas', error);
+        setSlabDepthAreas([]);
       });
   }, []);
+
+  const slabAreaCanvases = useMemo(() => slabDepthAreas.map((area) => {
+    const canvas = document.createElement('canvas');
+    canvas.width = area.width;
+    canvas.height = area.height;
+    const context = canvas.getContext('2d');
+    if (!context) throw new Error('Unable to create a canvas context for a slab depth area');
+    const imageData = context.createImageData(area.width, area.height);
+    imageData.data.set(area.pixels);
+    context.putImageData(imageData, 0, 0);
+    return { id: area.id, bounds: area.bounds, image: canvas };
+  }), [slabDepthAreas]);
 
   // 2. Build Deck.gl Layers
   const deckLayers = useMemo(() => {
@@ -313,30 +328,20 @@ export const MapContainer: React.FC = () => {
       })
     );
 
-    if (slabDepthContours.length > 0) {
-      layers.push(
-        new PathLayer({
-          id: 'slab-depth-contours',
-          data: slabDepthContours,
-          getPath: (contour: SlabDepthContour) => contour.path,
-          getColor: (contour: SlabDepthContour) => {
-            if (contour.threshold <= 30) return [255, 62, 62, 100];
-            if (contour.threshold <= 60) return [255, 31, 31, 100];
-            if (contour.threshold <= 90) return [209, 0, 0, 100];
-            if (contour.threshold <= 120) return [133, 0, 0, 100];
-            if (contour.threshold <= 150) return [56, 0, 0, 100];
-            if (contour.threshold <= 180) return [28, 0, 0, 100];
-            return [0, 0, 0, 0];
-          },
-          getWidth: 1.5,
-          widthUnits: 'pixels',
-          widthMinPixels: 1,
-          jointRounded: true,
-          capRounded: true,
-          opacity: 0.95,
+    if (isFaultVisible) {
+      for (const area of slabAreaCanvases) {
+        layers.push(new BitmapLayer({
+          id: `slab-depth-area-${area.id}`,
+          image: area.image,
+          bounds: area.bounds,
+          opacity: 0.8,
           pickable: false
-        })
-      );
+        }));
+      }
+    }
+
+    if (isArvVisible) {
+      layers.push(createGroundAmplificationLayer());
     }
 
     // Layer 1: Custom WebGL 250m Mesh Intensity Shader Layer (if toggled)
@@ -401,9 +406,11 @@ export const MapContainer: React.FC = () => {
     isKyoshinMonitor,
     ambientNoiseLevels,
     isMeshVisible,
+    isFaultVisible,
+    isArvVisible,
     mapVersion,
     hasEpicenter,
-    slabDepthContours
+    slabAreaCanvases
   ]);
 
   return (

@@ -157,6 +157,47 @@ describe('Subducting Slab & Anomalous Seismic Intensity Model', () => {
     expect(modelWithNoData.getDepthContours([50])).toHaveLength(0);
   });
 
+  it('should create translucent depth-filled raster areas and keep NoData transparent', () => {
+    const metadata: SlabGridMetadata = {
+      id: 'filled-area-test',
+      label: 'filled area test',
+      depthImage: '/test_dep.png',
+      thicknessImage: '/test_thk.png',
+      minLon: 139.9,
+      maxLon: 140.0,
+      minLat: 35.0,
+      maxLat: 35.1,
+      width: 2,
+      height: 2,
+      gridStepDegrees: 0.1,
+      depthOffsetKm: 0,
+      depthScale: 1,
+      thicknessOffsetKm: 0,
+      thicknessScale: 1,
+      validCells: 3
+    };
+    const model = Slab2Model.fromRasters([{
+      metadata,
+      depthPixels: new Uint8ClampedArray([
+        0, 1, 0, 255, 0, 0, 0, 0,
+        0, 61, 0, 255, 0, 121, 0, 255
+      ]),
+      thicknessPixels: new Uint8ClampedArray(16)
+    }]);
+
+    const [area] = model.getDepthAreas();
+    expect(area).toMatchObject({
+      id: 'filled-area-test',
+      width: 2,
+      height: 2,
+      bounds: [139.9, 35.0, 140.0, 35.1]
+    });
+    expect(Array.from(area.pixels)).toEqual([
+      255, 62, 62, 105, 0, 0, 0, 0,
+      255, 31, 31, 105, 133, 0, 0, 105
+    ]);
+  });
+
   it('should integrate the fraction of a 3D ray inside a Slab2 slab volume', () => {
     const model = syntheticGrid();
     const fraction = traceSlabFraction(

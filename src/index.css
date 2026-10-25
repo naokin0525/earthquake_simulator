@@ -153,6 +153,13 @@ html {
 	margin-top: 8px;
 }
 
+.map-overlay-toggles {
+	display: grid;
+	grid-template-columns: 1fr 1fr;
+	gap: 8px;
+	margin-top: 8px;
+}
+
 .btn-secondary {
 	background: rgba(51, 65, 85, 0.9);
 	border: 1px solid rgba(255, 255, 255, 0.14);

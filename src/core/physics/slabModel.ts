@@ -34,11 +34,50 @@ export interface SlabDepthContour {
   path: [[number, number], [number, number]];
 }
 
+export interface SlabDepthArea {
+  id: string;
+  width: number;
+  height: number;
+  bounds: [number, number, number, number];
+  pixels: Uint8ClampedArray;
+}
+
 export class Slab2Model {
   private constructor(private readonly grids: SlabGridRaster[]) {}
 
   public static fromRasters(grids: SlabGridRaster[]): Slab2Model {
     return new Slab2Model(grids);
+  }
+
+  public getDepthAreas(): SlabDepthArea[] {
+    return this.grids.map(({ metadata, depthPixels }) => {
+      const pixels = new Uint8ClampedArray(depthPixels.length);
+
+      for (let pixelIndex = 0; pixelIndex < depthPixels.length; pixelIndex += 4) {
+        const encodedDepth = (depthPixels[pixelIndex] << 8) | depthPixels[pixelIndex + 1];
+        if (encodedDepth === 0) continue;
+
+        const depth = metadata.depthOffsetKm + (encodedDepth - 1) / metadata.depthScale;
+        let color: [number, number, number, number];
+        if (depth <= 30) color = [255, 62, 62, 105];
+        else if (depth <= 60) color = [255, 31, 31, 105];
+        else if (depth <= 90) color = [209, 0, 0, 105];
+        else if (depth <= 120) color = [133, 0, 0, 105];
+        else if (depth <= 150) color = [56, 0, 0, 105];
+        else if (depth <= 180) color = [28, 0, 0, 105];
+        else color = [28, 0, 0, 65];
+
+        pixels.set(color, pixelIndex);
+      }
+
+      return {
+        id: metadata.id,
+        width: metadata.width,
+        height: metadata.height,
+        bounds: [metadata.minLon, metadata.minLat, metadata.maxLon, metadata.maxLat],
+        pixels
+      };
+    });
   }
 
   public getDepthContours(thresholds: number[]): SlabDepthContour[] {

@@ -66,6 +66,8 @@ interface SimulationContextValue {
   mapVersion: number;
   hasEpicenter: boolean;
   mapDisplayMode: MapDisplayMode;
+  isFaultVisible: boolean;
+  isArvVisible: boolean;
 
   // Actions
   setHypocenter: (lat: number, lon: number) => void;
@@ -73,6 +75,8 @@ interface SimulationContextValue {
   setMagnitude: (mw: number) => void;
   setTimeScale: (speed: number) => void;
   toggleMeshVisible: () => void;
+  toggleFaultVisible: () => void;
+  toggleArvVisible: () => void;
   play: () => void;
   pause: () => void;
   reset: () => void;
@@ -107,6 +111,8 @@ export const SimulationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   const [lpgmReport, setLpgmReport] = useState<LPGMReport | null>(null);
   const [milestones, setMilestones] = useState<SimulationMilestone[]>([]);
   const [isMeshVisible, setIsMeshVisible] = useState(false);
+  const [isFaultVisible, setIsFaultVisible] = useState(true);
+  const [isArvVisible, setIsArvVisible] = useState(false);
   const [isKyoshinMonitor, setIsKyoshinMonitor] = useState(false);
   const [ambientNoiseLevels, setAmbientNoiseLevels] = useState<Float32Array | null>(null);
   const [ambientNoiseUpdatedAt, setAmbientNoiseUpdatedAt] = useState<number | null>(null);
@@ -478,6 +484,14 @@ export const SimulationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     setIsMeshVisible(prev => !prev);
   }, []);
 
+  const toggleFaultVisible = useCallback(() => {
+    setIsFaultVisible(prev => !prev);
+  }, []);
+
+  const toggleArvVisible = useCallback(() => {
+    setIsArvVisible(prev => !prev);
+  }, []);
+
   const jumpToTime = useCallback((targetTime: number) => {
     if (!isPlaying) {
       play();
@@ -518,12 +532,16 @@ export const SimulationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         mapVersion,
         hasEpicenter,
         mapDisplayMode,
+        isFaultVisible,
+        isArvVisible,
         toggleKyoshinMonitor,
         setHypocenter,
         setDepth,
         setMagnitude,
         setTimeScale,
         toggleMeshVisible,
+        toggleFaultVisible,
+        toggleArvVisible,
         play,
         pause,
         reset,
