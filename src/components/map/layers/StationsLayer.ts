@@ -9,6 +9,7 @@ import { ScatterplotLayer } from '@deck.gl/layers';
 import { StationDataBuffer, StationState, JmaIntensityScale, StationTriggerEvent } from '../../../core/types';
 import { jmaScaleToNumeric } from '../../../core/physics/attenuation';
 import { getKyoshinColor, populationDensityToAmbientIntensity } from '../../../core/utils/colorUtils';
+import { hexToRgba, JMA_INTENSITY_LEVELS } from '../../../core/ui/intensityColors';
 
 export interface StationLayerProps {
   id?: string;
@@ -21,17 +22,8 @@ export interface StationLayerProps {
   onHover?: (info: any) => void;
 }
 
-const JMA_COLOR_MAP: Record<number, [number, number, number, number]> = {
-  1: [75, 150, 214, 240],  // '1'
-  2: [16, 78, 158, 240],   // '2'
-  3: [30, 130, 76, 240],    // '3'
-  4: [241, 196, 15, 255],   // '4'
-  5: [243, 156, 18, 255],   // '5-'
-  6: [230, 126, 34, 255],   // '5+'
-  7: [231, 76, 60, 255],    // '6-'
-  8: [192, 57, 43, 255],    // '6+'
-  9: [142, 68, 173, 255]    // '7'
-};
+const JMA_COLOR_MAP = JMA_INTENSITY_LEVELS.map(({ colour }) => hexToRgba(colour));
+const FALLBACK_INTENSITY_COLOR = JMA_COLOR_MAP[jmaScaleToNumeric('5+')];
 
 export function createStationsLayer(props: StationLayerProps): ScatterplotLayer {
   const {
@@ -82,9 +74,9 @@ export function createStationsLayer(props: StationLayerProps): ScatterplotLayer 
       const ev = triggerEventsMap?.get(d);
       if (ev) {
         const num = jmaScaleToNumeric(ev.intensity);
-        return JMA_COLOR_MAP[num] ?? [230, 126, 34, 255];
+        return JMA_COLOR_MAP[num] ?? FALLBACK_INTENSITY_COLOR;
       }
-      return [230, 126, 34, 255];
+      return FALLBACK_INTENSITY_COLOR;
     },
     getLineColor: (d: number) => {
       if (kyoshinMonitor) {
@@ -97,15 +89,14 @@ export function createStationsLayer(props: StationLayerProps): ScatterplotLayer 
     },
     getRadius: (d: number) => {
       if (kyoshinMonitor) {
-        return 3.5; // uniform size for all stations
+        return 3; // uniform size for all stations
       }
       const state = stationStates[d] ?? StationState.IDLE;
-      if (state === StationState.IDLE) return 1.5;
+      if (state === StationState.IDLE) return 3;
       if (state === StationState.P_TRIGGERED) {
-        // Pulsing radius between 3 and 6
-        return 4.5 + 1.5 * Math.sin(Date.now() / 150.0);
+        return 6;
       }
-      return 3.0; // S_ARRIVED
+      return 6; // S_ARRIVED
     },
     getLineWidth: (d: number) => {
       const state = stationStates[d] ?? StationState.IDLE;

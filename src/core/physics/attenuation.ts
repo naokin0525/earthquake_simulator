@@ -31,6 +31,7 @@ export { toJmaIntensityScale, quantizeJmaIntensity, jmaScaleToNumeric, isJmaGrea
 
 const BASE_K_ATTENUATION = 0.002; // Standard inelastic attenuation coefficient (km^-1)
 const SLAB_LOG10_PGV_BOOST_PER_FULL_PATH = 0.12;
+const MAX_ATTENUATION_DEPTH_KM = 60.0;
 
 export type FaultType = 'crustal' | 'interplate' | 'intraplate';
 
@@ -81,6 +82,7 @@ export function calculateBedrockPgv(
 ): number {
   const clampedDistance = Math.max(0.0, faultDistanceKm);
   const clampedDepth = Math.max(0.0, faultDepthKm);
+  const attenuationDepth = Math.min(clampedDepth, MAX_ATTENUATION_DEPTH_KM);
   const safeMw = Math.max(0.0, Mw);
 
   // Published fault-type terms and the geometric slab-path adjustment are separate.
@@ -96,7 +98,7 @@ export function calculateBedrockPgv(
   const saturationTerm = 0.0028 * Math.pow(10.0, 0.50 * safeMw);
   const log10Pgv600 =
     0.58 * safeMw +
-    0.0038 * clampedDepth +
+    0.0038 * attenuationDepth +
     faultTypeOffset -
     1.29 -
     Math.log10(clampedDistance + saturationTerm) -

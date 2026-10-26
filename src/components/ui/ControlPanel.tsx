@@ -54,7 +54,7 @@ export const ControlPanel: React.FC = () => {
       {/* Magnitude Slider */}
       <div className="flex-between mt-2">
         <span>マグニチュード</span>
-        <strong id="mag-val" className="text-swave">{hypocenter.magnitude.toFixed(1)}</strong>
+        <strong id="mag-val" className="text-swave">{hypocenter.magnitude.toFixed(2)}</strong>
       </div>
       <input
         type="range"

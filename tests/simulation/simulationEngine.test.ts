@@ -59,6 +59,29 @@ describe('SimulationEngine State Machine & Wave Propagation', () => {
     expect(engine.getStationStates()[0]).toBe(StationState.S_ARRIVED);
   });
 
+  it('should leave stations with predicted JMA intensity 0 inactive for deep-focus earthquakes', () => {
+    const stations: StationDataBuffer = {
+      totalStations: 2,
+      lats: new Float32Array([37.3, 30.0]),
+      lons: new Float32Array([133.9, 125.0]),
+      ampFactors: new Float32Array([1, 1]),
+      prefCodes: new Uint8Array([32, 47])
+    };
+    const engine = new SimulationEngine(stations);
+    engine.init({
+      hypocenter: { lat: 37.3, lon: 133.9, depth: 470, magnitude: 7.0, originTime: 0 },
+      timeScale: 1,
+      tickIntervalMs: 50,
+      noiseStdDev: 0
+    });
+
+    const tick = engine.update(1000);
+
+    expect(tick.newTriggers.some(({ stationIndex }) => stationIndex === 0)).toBe(true);
+    expect(tick.newTriggers.some(({ stationIndex }) => stationIndex === 1)).toBe(false);
+    expect(engine.getStationStates()[1]).toBe(StationState.IDLE);
+  });
+
   it('should scale simulation time step according to timeScale multiplier', () => {
     const engine = new SimulationEngine(mockStations);
     engine.init({

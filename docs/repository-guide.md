@@ -136,9 +136,9 @@ Provides the point-source distance passed to attenuation calculations. Because t
 
 Implements a Si & Midorikawa (1999)-form bedrock PGV model, a time envelope, and predicted continuous JMA intensity. With fault distance `R` in km, mean fault depth `D` in km, magnitude `Mw`, and slab-path fraction `r` clamped to `[0,1]`, the implemented relation is:
 
-`log10(PGV600) = 0.58 Mw + 0.0038 D + C - 1.29 - log10(R + 0.0028 * 10^(0.50 Mw)) - 0.002 R + 0.12 r`
+`log10(PGV600) = 0.58 Mw + 0.0038 min(D, 60 km) + C - 1.29 - log10(R + 0.0028 * 10^(0.50 Mw)) - 0.002 R + 0.12 r`
 
-where `C` is `0.00` for crustal, `-0.02` for interplate, or `+0.12` for intraplate events, and `PGV600 = 10^(right-hand side)` cm/s. If no fault type is supplied, depth provides a fallback classification (`<30 km` crustal, `30–<60 km` interplate, and `>=60 km` intraplate). The point-source model uses hypocentral distance for `R`, not a modeled fault-plane distance.
+where `D` is capped at 60 km in the empirical depth term to avoid extrapolating it to deep-focus earthquakes, `C` is `0.00` for crustal, `-0.02` for interplate, or `+0.12` for intraplate events, and `PGV600 = 10^(right-hand side)` cm/s. If no fault type is supplied, the actual source depth provides a fallback classification (`<30 km` crustal, `30–<60 km` interplate, and `>=60 km` intraplate). The point-source model uses hypocentral distance for `R`, not a modeled fault-plane distance. Stations whose predicted discrete intensity is JMA 0 remain inactive in the simulation display.
 
 The `envelope` is zero before P arrival, ramps to about 15% of peak between P and S arrivals, rises quadratically to peak over 2.5 seconds after S arrival, then decays exponentially with `tau = 4 + 1.5 Mw` seconds. Surface PGV is converted to a continuous predicted intensity by `I = 2.68 + 1.72 log10(PGVsurface)` (with a low-value guard), then mapped to a discrete JMA label. This empirical PGV equivalent is not the official waveform-based instrumental-intensity computation in `intensity.ts`.
 

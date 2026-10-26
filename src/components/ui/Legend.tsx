@@ -6,6 +6,7 @@
 
 import React from 'react';
 import { useSimulation } from '../../hooks/useSimulation';
+import { JMA_INTENSITY_LEVELS, LPGM_INTENSITY_LEVELS } from '../../core/ui/intensityColors';
 
 export const Legend: React.FC = () => {
   const { mapDisplayMode, lpgmReport, earthquakeInfoReport, flashReport, eewReport } = useSimulation();
@@ -25,37 +26,17 @@ export const Legend: React.FC = () => {
     }
   }
 
-  const JMA_SCALES = [
-    { scale: '0', color: '#FFFFFF', label: '0' },
-    { scale: '1', color: '#68C1F9', label: '1' },
-    { scale: '2', color: '#C6F4CD', label: '2' },
-    { scale: '3', color: '#FDEF72', label: '3' },
-    { scale: '4', color: '#F6C344', label: '4' },
-    { scale: '5-', color: '#E89939', label: '5弱' },
-    { scale: '5+', color: '#DF742C', label: '5強' },
-    { scale: '6-', color: '#EA4225', label: '6弱' },
-    { scale: '6+', color: '#971E27', label: '6強' },
-    { scale: '7', color: '#B825F7', label: '7' }
-  ];
-
-  const LPGM_SCALES = [
-    { classLevel: 1, color: '#3b82f6', label: '階級1' },
-    { classLevel: 2, color: '#f97316', label: '階級2' },
-    { classLevel: 3, color: '#ef4444', label: '階級3' },
-    { classLevel: 4, color: '#9333ea', label: '階級4' }
-  ];
-
   return (
     <div className="glass-panel legend" id="legend-container" style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
       {effectiveMode === 'lpgm' ? (
         <>
           <span style={{ fontSize: '11px', marginRight: '6px', color: '#c4b5fd' }}>長周期階級</span>
-          {LPGM_SCALES.map((item) => (
+          {LPGM_INTENSITY_LEVELS.map((item) => (
             <div
               key={item.classLevel}
               className="jma-box"
               style={{
-                backgroundColor: item.color,
+                backgroundColor: item.colour,
                 color: '#fff',
                 fontSize: '10px',
                 padding: '2px 6px',
@@ -97,13 +78,15 @@ export const Legend: React.FC = () => {
       ) : (
         <>
           <span style={{ fontSize: '12px', marginRight: '6px', color: '#cbd5e1' }}>震度</span>
-          {JMA_SCALES.map((item) => (
+          {JMA_INTENSITY_LEVELS.map((item) => (
             <div
               key={item.scale}
               className="jma-box"
               style={{
-                backgroundColor: item.color,
-                color: item.scale === '4' ? '#111' : '#fff'
+                backgroundColor: item.colour,
+                color: item.scale === '0' || item.scale === '2' || item.scale === '3' || item.scale === '4'
+                  ? '#111'
+                  : '#fff'
               }}
             >
               {item.label}

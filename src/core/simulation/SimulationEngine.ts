@@ -38,6 +38,7 @@ export class SimulationEngine {
   private pObservedTimes: Float32Array = new Float32Array(0);
   private hypocentralDists: Float32Array = new Float32Array(0);
   private slabFractions: Float32Array = new Float32Array(0);
+  private unobservableStations: Uint8Array = new Uint8Array(0);
   private stationStates: Uint8Array = new Uint8Array(0);
   private measuredPgvs: Float32Array = new Float32Array(0);
 
@@ -62,6 +63,7 @@ export class SimulationEngine {
     this.pObservedTimes = new Float32Array(N);
     this.hypocentralDists = new Float32Array(N);
     this.slabFractions = new Float32Array(N);
+    this.unobservableStations = new Uint8Array(N);
     this.stationStates = new Uint8Array(N); // 0 = IDLE
     this.measuredPgvs = new Float32Array(N);
 
@@ -81,6 +83,13 @@ export class SimulationEngine {
       this.hypocentralDists[i] = travelTimes.hypocentralDistance;
       this.pArrivalTimes[i] = travelTimes.pArrivalTime;
       this.sArrivalTimes[i] = travelTimes.sArrivalTime;
+      this.unobservableStations[i] = calculateJmaIntensity(
+        travelTimes.hypocentralDistance,
+        hypo.depth,
+        hypo.magnitude,
+        this.stations.ampFactors[i],
+        rSlab
+      ).jmaScale === '0' ? 1 : 0;
 
       // Add a small Gaussian pick error to mimic real station arrival-time picking variability.
       const noise = generateGaussianNoise(noiseStdDev);
@@ -148,6 +157,8 @@ export class SimulationEngine {
     const intensityUpdates: IntensityUpdate[] = [];
 
     for (let i = 0; i < N; i++) {
+      if (this.unobservableStations[i]) continue;
+
       const currentState = this.stationStates[i];
       const pObs = this.pObservedTimes[i];
       const sArr = this.sArrivalTimes[i];

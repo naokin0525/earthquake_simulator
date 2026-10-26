@@ -34,6 +34,13 @@ describe('Si & Midorikawa (1999) PGV & JMA Intensity Engine', () => {
     expect(fullSlabPath / baseline).toBeCloseTo(10 ** 0.12, 6);
   });
 
+  it('should not extrapolate the empirical depth boost to deep-focus earthquakes', () => {
+    const deepFocusPgv = calculateBedrockPgv(800, 470, 7.0);
+    const deepestCalibratedPgv = calculateBedrockPgv(800, 60, 7.0);
+
+    expect(deepFocusPgv).toBe(deepestCalibratedPgv);
+  });
+
   it('should scale surface PGV proportionally with site amplification factor ARV', () => {
     const bedrockPgv = 10.0; // 10 cm/s
     const pgvSoftSoil = calculateSurfacePgv(bedrockPgv, 2.5); // Soft soil ARV = 2.5

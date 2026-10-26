@@ -18,6 +18,7 @@ import { createMeshIntensityLayer } from './layers/MeshIntensityLayer';
 import { createGroundAmplificationLayer } from './layers/GroundAmplificationLayer';
 import { StationLoader } from '../../loaders/StationLoader';
 import { Slab2Model, type SlabDepthArea } from '../../core/physics/slabModel';
+import { hexToRgba, JMA_INTENSITY_LEVELS, LPGM_INTENSITY_LEVELS } from '../../core/ui/intensityColors';
 
 // Initial map view state focused on Japan
 const INITIAL_VIEW_STATE = {
@@ -28,27 +29,19 @@ const INITIAL_VIEW_STATE = {
   bearing: 0
 };
 
-// Official JMA Seismic Intensity scale RGB colors
-const INTENSITY_FILL_COLORS: Record<string, [number, number, number, number]> = {
-  '7': [184, 37, 247, 220],
-  '6+': [151, 30, 39, 220],
-  '6-': [234, 66, 37, 220],
-  '5+': [223, 116, 44, 220],
-  '5-': [232, 153, 57, 220],
-  '4': [246, 195, 68, 220],
-  '3': [104, 193, 249, 220],
-  '2': [198, 244, 205, 180],
-  '1': [140, 180, 210, 160],
-  '0': [35, 42, 35, 230]
-};
+const INTENSITY_FILL_COLORS: Record<string, [number, number, number, number]> = Object.fromEntries(
+  JMA_INTENSITY_LEVELS.map(({ scale, colour }) => [
+    scale,
+    hexToRgba(colour, scale === '0' ? 230 : scale === '1' ? 160 : scale === '2' ? 180 : 220)
+  ])
+);
 
-// JMA Long-Period Ground Motion (LPGM) Class RGB colors
-const LPGM_FILL_COLORS: Record<number, [number, number, number, number]> = {
-  4: [147, 51, 234, 220],
-  3: [239, 68, 68, 220],
-  2: [249, 115, 22, 220],
-  1: [59, 130, 246, 210]
-};
+const LPGM_FILL_COLORS: Record<number, [number, number, number, number]> = Object.fromEntries(
+  LPGM_INTENSITY_LEVELS.map(({ classLevel, colour }) => [
+    classLevel,
+    hexToRgba(colour, classLevel === 1 ? 210 : 220)
+  ])
+);
 
 export const MapContainer: React.FC = () => {
   const mapContainerRef = useRef<HTMLDivElement>(null);
