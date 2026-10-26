@@ -140,7 +140,15 @@ export function estimateLPGM(
 
   const epicentralDistance = calculateDistance(hypo.lat, hypo.lon, lat, lon);
   const faultDistance = Math.hypot(epicentralDistance, hypo.depth);
-  const bedrockPgv = calculateBedrockPgv(faultDistance, hypo.depth, hypo.magnitude);
+  const bedrockPgv = calculateBedrockPgv(
+    faultDistance,
+    hypo.depth,
+    hypo.magnitude,
+    0.0,
+    undefined,
+    lat,
+    lon
+  );
   const surfacePgv = calculateSurfacePgv(bedrockPgv, surfaceAmplification);
   const sv = surfacePgv * getSyntheticResponseFactor();
   return { sv, classLevel: classifyLPGM(sv) };

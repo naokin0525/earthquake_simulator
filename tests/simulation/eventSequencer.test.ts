@@ -71,7 +71,7 @@ describe('EventSequencer reports', () => {
     expect(result.milestone).toBeUndefined();
   });
 
-  it('reports only prefectures with a non-zero estimated long-period class', () => {
+  it('reports distant prefectures activated by the attenuation correction', () => {
     const sequencer = new EventSequencer();
     const northernHypocenter: EarthquakeHypocenter = {
       ...hypocenter,
@@ -105,7 +105,7 @@ describe('EventSequencer reports', () => {
     expect(result.event?.type).toBe('LPGM_REPORT');
     expect(affectedPrefectures).toEqual(expected);
     expect(affectedPrefectures.some((prefecture) => prefecture.prefName === '北海道')).toBe(true);
-    expect(affectedPrefectures.some((prefecture) => prefecture.prefName === '東京都')).toBe(false);
+    expect(affectedPrefectures.some((prefecture) => prefecture.prefName === '東京都')).toBe(true);
   });
 
   it('issues detailed EARTHQUAKE_INFO report at simTime >= 180s', () => {

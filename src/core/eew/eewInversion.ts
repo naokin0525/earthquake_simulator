@@ -91,7 +91,15 @@ function estimateMagnitude(
         depth
       );
       const observedBedrockPgv = (observation.measuredPgv ?? 0) / observation.ampFactor;
-      const predictedBedrockPgv = calculateBedrockPgv(distance, depth, magnitude);
+      const predictedBedrockPgv = calculateBedrockPgv(
+        distance,
+        depth,
+        magnitude,
+        0.0,
+        undefined,
+        observation.lat,
+        observation.lon
+      );
       const error = Math.log10(Math.max(1e-6, observedBedrockPgv)) -
         Math.log10(Math.max(1e-6, predictedBedrockPgv));
       residual += Math.min(error * error, 4);

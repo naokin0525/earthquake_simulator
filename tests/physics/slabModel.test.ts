@@ -253,7 +253,7 @@ describe('Subducting Slab & Anomalous Seismic Intensity Model', () => {
 
     const pgvWithSlab = calculateBedrockPgv(500, hypocenter.depth, hypocenter.magnitude, tokyoFraction);
     const pgvWithoutSlab = calculateBedrockPgv(500, hypocenter.depth, hypocenter.magnitude, 0);
-    expect(pgvWithSlab).toBeGreaterThan(pgvWithoutSlab);
+    expect(pgvWithSlab).toBe(pgvWithoutSlab);
 
     const stations: StationDataBuffer = {
       totalStations: 2,
@@ -275,21 +275,28 @@ describe('Subducting Slab & Anomalous Seismic Intensity Model', () => {
     expect(tokyoEvent?.pArrivalTime).toBeCloseTo(tokyoWithSlab.pArrivalTime, 4);
 
     const expectedIntensity = calculateJmaIntensity(
-      pointSourceDistance(tokyo.lat, tokyo.lon, hypocenter.lat, hypocenter.lon, hypocenter.depth),
+      pointSourceDistance(stations.lats[0], stations.lons[0], hypocenter.lat, hypocenter.lon, hypocenter.depth),
       hypocenter.depth,
       hypocenter.magnitude,
       1,
-      tokyoFraction
+      tokyoFraction,
+      undefined,
+      stations.lats[0],
+      stations.lons[0]
     );
     expect(tokyoEvent?.intensity).toBe(expectedIntensity.jmaScale);
     expect(tokyoEvent?.pgvSurface).toBeCloseTo(expectedIntensity.pgvSurface, 4);
     const expectedWithoutSlab = calculateJmaIntensity(
-      pointSourceDistance(tokyo.lat, tokyo.lon, hypocenter.lat, hypocenter.lon, hypocenter.depth),
+      pointSourceDistance(stations.lats[0], stations.lons[0], hypocenter.lat, hypocenter.lon, hypocenter.depth),
       hypocenter.depth,
       hypocenter.magnitude,
-      1
+      1,
+      0,
+      undefined,
+      stations.lats[0],
+      stations.lons[0]
     );
-    expect(expectedIntensity.pgvSurface).toBeGreaterThan(expectedWithoutSlab.pgvSurface);
+    expect(expectedIntensity.pgvSurface).toBe(expectedWithoutSlab.pgvSurface);
   });
 
   it('should retain the legacy fallback for callers without raster data', () => {
@@ -297,7 +304,7 @@ describe('Subducting Slab & Anomalous Seismic Intensity Model', () => {
     expect(rSlabPacific).toBeGreaterThan(0.2);
   });
 
-  it('should boost wave velocity and reduce attenuation along slab-dominated ray paths for deep events', () => {
+  it('should boost wave velocity along slab-dominated ray paths for deep events', () => {
     const hypoDeep = { lat: 40.0, lon: 135.0, depth: 350.0, magnitude: 7.0, originTime: 0.0 };
     const pacificLat = 38.3, pacificLon = 141.0;
 
@@ -307,10 +314,30 @@ describe('Subducting Slab & Anomalous Seismic Intensity Model', () => {
     expect(tt.vP).toBeGreaterThan(6.0); // Velocity boosted above baseline 6.0 km/s
     expect(tt.vS).toBeGreaterThan(3.5); // Velocity boosted above baseline 3.5 km/s
 
-    // Bedrock PGV with slab model vs without slab model
+    // Slab path affects travel speed, not the removed attenuation heuristic.
     const pgvWithSlab = calculateBedrockPgv(tt.hypocentralDistance, hypoDeep.depth, hypoDeep.magnitude, rSlab);
     const pgvNoSlab = calculateBedrockPgv(tt.hypocentralDistance, hypoDeep.depth, hypoDeep.magnitude, 0.0);
 
-    expect(pgvWithSlab).toBeGreaterThan(pgvNoSlab); // Less attenuation along cold slab path
+    expect(pgvWithSlab).toBe(pgvNoSlab);
+  });
+
+  it('should increase average travel velocities for deep mantle paths', () => {
+    const shallow = computeTravelTimes(
+      { lat: 40, lon: 135, depth: 60, magnitude: 7, originTime: 0 },
+      38,
+      141
+    );
+    const deep = computeTravelTimes(
+      { lat: 40, lon: 135, depth: 400, magnitude: 7, originTime: 0 },
+      38,
+      141
+    );
+
+    expect(shallow.vP).toBe(6.0);
+    expect(shallow.vS).toBe(3.5);
+    expect(deep.vP).toBeGreaterThan(shallow.vP);
+    expect(deep.vP).toBeLessThan(8.0);
+    expect(deep.vS).toBeGreaterThan(shallow.vS);
+    expect(deep.vS).toBeLessThan(4.6);
   });
 });

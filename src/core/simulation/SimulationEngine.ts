@@ -74,8 +74,7 @@ export class SimulationEngine {
       const stLat = this.stations.lats[i];
       const stLon = this.stations.lons[i];
 
-      // Slab fraction is used as a path-quality factor: stations near the subduction slab see a
-      // slightly different attenuation velocity/energy behavior than stations in normal crust.
+      // Slab fraction adjusts modeled wave velocity along subduction-zone paths.
       const rSlab = calculateSlabFraction(hypo.lat, hypo.lon, hypo.depth, stLat, stLon, this.slabModel);
       this.slabFractions[i] = rSlab;
 
@@ -88,7 +87,10 @@ export class SimulationEngine {
         hypo.depth,
         hypo.magnitude,
         this.stations.ampFactors[i],
-        rSlab
+        rSlab,
+        undefined,
+        stLat,
+        stLon
       ).jmaScale === '0' ? 1 : 0;
 
       // Add a small Gaussian pick error to mimic real station arrival-time picking variability.
@@ -177,7 +179,10 @@ export class SimulationEngine {
           hypo.depth,
           hypo.magnitude,
           arv,
-          rSlab
+          rSlab,
+          undefined,
+          stLat,
+          stLon
         );
 
         this.measuredPgvs[i] = pgvSurface;
@@ -216,7 +221,10 @@ export class SimulationEngine {
           hypo.depth,
           hypo.magnitude,
           arv,
-          rSlab
+          rSlab,
+          undefined,
+          stLat,
+          stLon
         );
 
         this.measuredPgvs[i] = pgvSurface;

@@ -123,8 +123,7 @@ export function findCumulativeDurationThreshold(
 
   // Sort magnitudes descending
   const sorted = new Float64Array(vectorWaveform);
-  sorted.sort();
-  sorted.reverse();
+  sorted.sort((a, b) => b - a);
 
   // If all values are zero, threshold is 0.0
   if (sorted[0] <= 0.0) {

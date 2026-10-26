@@ -7,6 +7,9 @@
 import { describe, it, expect } from 'vitest';
 import {
   calculateBedrockPgv,
+  calculateMorikawaCorrectionTerms,
+  calculateTrenchAxisDistanceKm,
+  PACIFIC_TRENCH_AXIS_POINTS,
   calculateSurfacePgv,
   calculateContinuousJmaIntensity,
   quantizeJmaIntensity,
@@ -28,17 +31,40 @@ describe('Si & Midorikawa (1999) PGV & JMA Intensity Engine', () => {
     expect(bedrockPgv).toBeLessThan(300.0);
   });
 
-  it('should increase PGV continuously with the fraction of ray path inside the slab', () => {
+  it('does not apply the removed ad-hoc slab path boost', () => {
     const baseline = calculateBedrockPgv(100, 200, 7, 0, 'crustal');
     const fullSlabPath = calculateBedrockPgv(100, 200, 7, 1, 'crustal');
-    expect(fullSlabPath / baseline).toBeCloseTo(10 ** 0.12, 6);
+    expect(fullSlabPath).toBe(baseline);
   });
 
-  it('should not extrapolate the empirical depth boost to deep-focus earthquakes', () => {
+  it('uses the actual depth in the baseline model', () => {
     const deepFocusPgv = calculateBedrockPgv(800, 470, 7.0);
     const deepestCalibratedPgv = calculateBedrockPgv(800, 60, 7.0);
 
-    expect(deepFocusPgv).toBe(deepestCalibratedPgv);
+    expect(deepFocusPgv / deepestCalibratedPgv).toBeCloseTo(10 ** (0.0038 * 410), 10);
+  });
+
+  it('calculates Morikawa correction terms at their specified boundaries', () => {
+    expect(calculateMorikawaCorrectionTerms(300, 30, 100)).toEqual({ log10V1: 0, log10V2: 0 });
+    expect(calculateMorikawaCorrectionTerms(300, 100, 100).log10V1)
+      .toBeCloseTo((-4.0e-5 * 100 + 9.9e-3) * 70);
+    expect(calculateMorikawaCorrectionTerms(300, 100, 400).log10V1).toBeCloseTo(-0.0061 * 70);
+    expect(calculateMorikawaCorrectionTerms(300, 100, 247.5).log10V1).toBeCloseTo(0);
+    expect(calculateMorikawaCorrectionTerms(600, 30, 100).log10V2)
+      .toBeCloseTo(2.1 * Math.log10(2) - 0.01);
+
+    const pacificSidePgv = calculateBedrockPgv(300, 100, 7, 0, 'crustal', undefined, undefined, 100);
+    const seaOfJapanSidePgv = calculateBedrockPgv(300, 100, 7, 0, 'crustal', undefined, undefined, 400);
+    expect(pacificSidePgv).toBeGreaterThan(seaOfJapanSidePgv);
+  });
+
+  it('computes trench distance to the axis and applies corrections to JMA predictions', () => {
+    const [stationLat, stationLon] = PACIFIC_TRENCH_AXIS_POINTS[0];
+    expect(calculateTrenchAxisDistanceKm(stationLat, stationLon)).toBeCloseTo(0, 8);
+
+    const station = calculateJmaIntensity(400, 150, 7, 1, 0, undefined, stationLat, stationLon);
+    expect(station.log10V1).toBeGreaterThan(0);
+    expect(station.log10V2).toBeGreaterThan(0);
   });
 
   it('should scale surface PGV proportionally with site amplification factor ARV', () => {

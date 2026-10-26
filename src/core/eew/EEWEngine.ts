@@ -163,7 +163,16 @@ export class EEWEngine {
        );
        const dist = pointSourceDistance(pref.lat, pref.lon, estHypo.lat, estHypo.lon, estHypo.depth);
 
-       const { jmaScale } = calculateJmaIntensity(dist, estHypo.depth, estHypo.magnitude, pref.defaultArv, rSlab);
+       const { jmaScale } = calculateJmaIntensity(
+         dist,
+         estHypo.depth,
+         estHypo.magnitude,
+         pref.defaultArv,
+         rSlab,
+         undefined,
+         pref.lat,
+         pref.lon
+       );
 
        if (isJmaGreaterOrEqual(jmaScale, maxPredictedIntensity)) {
          maxPredictedIntensity = jmaScale;

@@ -2,6 +2,7 @@
 node_modules/
 dist/
 src/**/*.js
+!src/core/physics/arvResolver.js
 build/
 
 # Logs

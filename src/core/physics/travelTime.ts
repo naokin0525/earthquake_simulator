@@ -9,6 +9,9 @@ import { EarthquakeHypocenter } from '../types';
 const EARTH_RADIUS_KM = 6371.0088;
 const BASE_VP_KMS = 6.0; // Baseline P-wave velocity (km/s)
 const BASE_VS_KMS = 3.5; // Baseline S-wave velocity (km/s)
+const MANTLE_VP_KMS = 8.0;
+const MANTLE_VS_KMS = 4.6;
+const CRUSTAL_LAYER_DEPTH_KM = 60.0;
 
 /**
  * Computes epicentral geodesic distance in kilometers between two points using the Haversine formula.
@@ -74,10 +77,20 @@ export function computeTravelTimes(
   const R = hypocentralDistance(delta, hypocenter.depth);
 
   const rClamped = Math.max(0.0, Math.min(1.0, rSlab));
-  
-  // Velocity boost along cold subducting slab paths
-  const vP = BASE_VP_KMS * (1.0 + 0.12 * rClamped);
-  const vS = BASE_VS_KMS * (1.0 + 0.12 * rClamped);
+  const depthKm = Math.max(0.0, hypocenter.depth);
+  const mantleFraction = depthKm > CRUSTAL_LAYER_DEPTH_KM
+    ? (depthKm - CRUSTAL_LAYER_DEPTH_KM) / depthKm
+    : 0.0;
+  const averageVelocity = (crustalVelocity: number, mantleVelocity: number): number => {
+    const travelTimePerKm =
+      (1.0 - mantleFraction) / crustalVelocity +
+      mantleFraction / mantleVelocity;
+    return 1.0 / travelTimePerKm;
+  };
+
+  // Deep paths spend an increasing share of their vertical segment in the faster mantle.
+  const vP = averageVelocity(BASE_VP_KMS, MANTLE_VP_KMS) * (1.0 + 0.12 * rClamped);
+  const vS = averageVelocity(BASE_VS_KMS, MANTLE_VS_KMS) * (1.0 + 0.12 * rClamped);
 
   const pArrivalTime = hypocenter.originTime + R / vP;
   const sArrivalTime = hypocenter.originTime + R / vS;

@@ -59,7 +59,7 @@ describe('SimulationEngine State Machine & Wave Propagation', () => {
     expect(engine.getStationStates()[0]).toBe(StationState.S_ARRIVED);
   });
 
-  it('should leave stations with predicted JMA intensity 0 inactive for deep-focus earthquakes', () => {
+  it('should suppress deep-event shaking on the Sea of Japan side of the trench', () => {
     const stations: StationDataBuffer = {
       totalStations: 2,
       lats: new Float32Array([37.3, 30.0]),
@@ -77,8 +77,9 @@ describe('SimulationEngine State Machine & Wave Propagation', () => {
 
     const tick = engine.update(1000);
 
-    expect(tick.newTriggers.some(({ stationIndex }) => stationIndex === 0)).toBe(true);
+    expect(tick.newTriggers.some(({ stationIndex }) => stationIndex === 0)).toBe(false);
     expect(tick.newTriggers.some(({ stationIndex }) => stationIndex === 1)).toBe(false);
+    expect(engine.getStationStates()[0]).toBe(StationState.IDLE);
     expect(engine.getStationStates()[1]).toBe(StationState.IDLE);
   });
 

@@ -30,8 +30,18 @@ export { calculateArvFromVs30, calculateSurfacePgv, calculateSurfacePga };
 export { toJmaIntensityScale, quantizeJmaIntensity, jmaScaleToNumeric, isJmaGreaterOrEqual };
 
 const BASE_K_ATTENUATION = 0.002; // Standard inelastic attenuation coefficient (km^-1)
-const SLAB_LOG10_PGV_BOOST_PER_FULL_PATH = 0.12;
-const MAX_ATTENUATION_DEPTH_KM = 60.0;
+const EARTH_RADIUS_KM = 6371.0088;
+
+// Definition points for the Japan and Kuril trench axes (based on Earthquake Research Committee 2002).
+export const PACIFIC_TRENCH_AXIS_POINTS: Array<[number, number]> = [
+  [45.0, 150.0],
+  [43.0, 146.0],
+  [41.5, 144.5],
+  [40.0, 144.0],
+  [38.0, 143.5],
+  [36.0, 142.5],
+  [34.5, 141.5]
+];
 
 export type FaultType = 'crustal' | 'interplate' | 'intraplate';
 
@@ -53,6 +63,64 @@ export function inferFaultTypeFromDepth(depthKm: number): FaultType {
 }
 
 /**
+ * Calculates the shortest local-projection distance from a point to the trench
+ * axis polyline. The equirectangular projection is accurate at the scale of
+ * these short trench segments and avoids allocating geodesic helper objects.
+ */
+export function calculateTrenchAxisDistanceKm(
+  stationLat: number,
+  stationLon: number,
+  trenchAxisPoints: Array<[number, number]> = PACIFIC_TRENCH_AXIS_POINTS
+): number {
+  if (trenchAxisPoints.length === 0) return Number.POSITIVE_INFINITY;
+
+  const latitudeRadians = stationLat * Math.PI / 180.0;
+  const longitudeScale = EARTH_RADIUS_KM * Math.cos(latitudeRadians) * Math.PI / 180.0;
+  const latitudeScale = EARTH_RADIUS_KM * Math.PI / 180.0;
+  const firstPoint = trenchAxisPoints[0];
+  if (trenchAxisPoints.length === 1) {
+    return Math.hypot(
+      (firstPoint[1] - stationLon) * longitudeScale,
+      (firstPoint[0] - stationLat) * latitudeScale
+    );
+  }
+
+  let shortestDistance = Number.POSITIVE_INFINITY;
+  for (let i = 0; i < trenchAxisPoints.length - 1; i++) {
+    const start = trenchAxisPoints[i];
+    const end = trenchAxisPoints[i + 1];
+    const startX = (start[1] - stationLon) * longitudeScale;
+    const startY = (start[0] - stationLat) * latitudeScale;
+    const segmentX = (end[1] - start[1]) * longitudeScale;
+    const segmentY = (end[0] - start[0]) * latitudeScale;
+    const segmentLengthSquared = segmentX * segmentX + segmentY * segmentY;
+    const projection = segmentLengthSquared === 0
+      ? 0
+      : Math.max(0, Math.min(1, -(startX * segmentX + startY * segmentY) / segmentLengthSquared));
+    const nearestX = startX + projection * segmentX;
+    const nearestY = startY + projection * segmentY;
+    shortestDistance = Math.min(shortestDistance, Math.hypot(nearestX, nearestY));
+  }
+
+  return shortestDistance;
+}
+
+export function calculateMorikawaCorrectionTerms(
+  faultDistanceKm: number,
+  faultDepthKm: number,
+  rTrKm: number
+): { log10V1: number; log10V2: number } {
+  const log10V1 = faultDepthKm > 30.0 && Number.isFinite(rTrKm)
+    ? (-4.0e-5 * rTrKm + 9.9e-3) * (faultDepthKm - 30.0)
+    : 0.0;
+  const log10V2 = faultDistanceKm > 300.0
+    ? Math.max(0.0, 2.1 * Math.log10(faultDistanceKm / 300.0) - 0.01)
+    : 0.0;
+
+  return { log10V1, log10V2 };
+}
+
+/**
  * Calculates Peak Ground Velocity on engineering bedrock (PGV_600, in cm/s)
  * using the Si & Midorikawa (1999) empirical attenuation model.
  *
@@ -60,50 +128,62 @@ export function inferFaultTypeFromDepth(depthKm: number): FaultType {
  *   - R is the closest distance to the fault plane, not hypocentral distance.
  *   - D is the average depth of the fault plane, not the hypocenter depth.
  *   - The published model includes fault-type dummy terms: crustal = 0.00, inter-plate = -0.02,
- *     intraplate/slab = +0.12. Slab path fraction adds a separate bounded high-Q path adjustment.
+ *     intraplate/slab = +0.12.
  *
  * Formula:
  *   log10(PGV_600) =
  *     0.58 * Mw + 0.0038 * D + dummyTerm - 1.29
- *       - log10(R + 0.0028 * 10^(0.50 * Mw)) - k * R + 0.12 * rSlab
+ *       - log10(R + 0.0028 * 10^(0.50 * Mw)) - k * R + log10(V1) + log10(V2)
  *
  * @param faultDistanceKm Closest distance to the fault plane in km.
  * @param faultDepthKm Average fault-plane depth in km.
  * @param Mw Moment magnitude.
- * @param rSlab Raypath fraction inside the cold slab, from 0 (none) to 1 (entire path).
+ * @param rSlab Retained for API compatibility; slab path boost is not part of this attenuation model.
  * @param faultType Fault type for the published dummy-term correction.
+ * @param stationLat Observation point latitude, used to calculate trench distance when rTrKm is omitted.
+ * @param stationLon Observation point longitude, used to calculate trench distance when rTrKm is omitted.
+ * @param rTrKm Optional precomputed shortest distance to the trench axis.
  */
 export function calculateBedrockPgv(
   faultDistanceKm: number,
   faultDepthKm: number,
   Mw: number,
   rSlab: number = 0.0,
-  faultType?: FaultType
+  faultType?: FaultType,
+  stationLat?: number,
+  stationLon?: number,
+  rTrKm?: number
 ): number {
   const clampedDistance = Math.max(0.0, faultDistanceKm);
   const clampedDepth = Math.max(0.0, faultDepthKm);
-  const attenuationDepth = Math.min(clampedDepth, MAX_ATTENUATION_DEPTH_KM);
   const safeMw = Math.max(0.0, Mw);
 
-  // Published fault-type terms and the geometric slab-path adjustment are separate.
   const resolvedFaultType = faultType ?? inferFaultTypeFromDepth(clampedDepth);
   const faultTypeOffset =
     resolvedFaultType === 'intraplate' ? 0.12 :
     resolvedFaultType === 'interplate' ? -0.02 :
     0.0;
-  const slabPathBoost = SLAB_LOG10_PGV_BOOST_PER_FULL_PATH *
-    Math.max(0.0, Math.min(1.0, rSlab));
+  const trenchDistance = rTrKm ??
+    (stationLat !== undefined && stationLon !== undefined
+      ? calculateTrenchAxisDistanceKm(stationLat, stationLon)
+      : Number.NaN);
+  const { log10V1, log10V2 } = calculateMorikawaCorrectionTerms(
+    clampedDistance,
+    clampedDepth,
+    trenchDistance
+  );
+  void rSlab;
 
-  // This is the published Si & Midorikawa bedrock attenuation form.
   const saturationTerm = 0.0028 * Math.pow(10.0, 0.50 * safeMw);
   const log10Pgv600 =
     0.58 * safeMw +
-    0.0038 * attenuationDepth +
+    0.0038 * clampedDepth +
     faultTypeOffset -
     1.29 -
     Math.log10(clampedDistance + saturationTerm) -
     BASE_K_ATTENUATION * clampedDistance +
-    slabPathBoost;
+    log10V1 +
+    log10V2;
 
   return Math.pow(10.0, log10Pgv600);
 }
@@ -151,11 +231,38 @@ export function calculateJmaIntensity(
   Mw: number,
   arv: number,
   rSlab: number = 0.0,
-  faultType?: FaultType
-): { pgvSurface: number; continuousIntensity: number; jmaScale: JmaIntensityScale } {
+  faultType?: FaultType,
+  stationLat?: number,
+  stationLon?: number,
+  rTrKm?: number
+): {
+  pgvSurface: number;
+  continuousIntensity: number;
+  jmaScale: JmaIntensityScale;
+  log10V1: number;
+  log10V2: number;
+} {
   // Determine fault type based on depth heuristic (crustal <30km, interplate 30-60km, intraplate >60km)
   const resolvedFaultType = faultType ?? inferFaultTypeFromDepth(faultDepthKm);
-  const bedrockPgv = calculateBedrockPgv(faultDistanceKm, faultDepthKm, Mw, rSlab, resolvedFaultType);
+  const trenchDistance = rTrKm ??
+    (stationLat !== undefined && stationLon !== undefined
+      ? calculateTrenchAxisDistanceKm(stationLat, stationLon)
+      : Number.NaN);
+  const { log10V1, log10V2 } = calculateMorikawaCorrectionTerms(
+    Math.max(0.0, faultDistanceKm),
+    Math.max(0.0, faultDepthKm),
+    trenchDistance
+  );
+  const bedrockPgv = calculateBedrockPgv(
+    faultDistanceKm,
+    faultDepthKm,
+    Mw,
+    rSlab,
+    resolvedFaultType,
+    stationLat,
+    stationLon,
+    trenchDistance
+  );
   const pgvSurface = calculateSurfacePgv(bedrockPgv, arv);
   const continuousIntensity = calculateContinuousJmaIntensity(pgvSurface);
   const jmaScale = quantizeJmaIntensity(continuousIntensity);
@@ -163,6 +270,8 @@ export function calculateJmaIntensity(
   return {
     pgvSurface,
     continuousIntensity,
-    jmaScale
+    jmaScale,
+    log10V1,
+    log10V2
   };
 }
