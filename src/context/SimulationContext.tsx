@@ -407,7 +407,7 @@ export const SimulationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     setIsPlaying(false);
   }, []);
 
-  const reset = useCallback((config?: ReturnType<typeof createSimulationConfig>) => {
+  const resetSimulation = useCallback((config?: ReturnType<typeof createSimulationConfig>) => {
     if (!hasEpicenter) return;
     postWorkerAction(config ? { type: 'RESET', payload: config } : { type: 'RESET' });
     setIsPlaying(false);
@@ -421,6 +421,10 @@ export const SimulationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     triggerEventsMapRef.current.clear();
     setMapVersion((version) => version + 1);
   }, [clearReportState, stationBuffer, hasEpicenter]);
+
+  const reset = useCallback(() => {
+    resetSimulation();
+  }, [resetSimulation]);
 
   const seek = useCallback((time: number) => {
     postWorkerAction({ type: 'SEEK', payload: { time } });
@@ -451,25 +455,25 @@ export const SimulationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     setHypocenterState(updated);
     setHasEpicenter(true);
     if (isPlaying || simTime > 0) {
-      reset(createSimulationConfig(updated, timeScale));
+      resetSimulation(createSimulationConfig(updated, timeScale));
     }
-  }, [hypocenter, isPlaying, simTime, timeScale, reset]);
+  }, [hypocenter, isPlaying, simTime, timeScale, resetSimulation]);
 
   const setDepth = useCallback((depthKm: number) => {
     const updated = { ...hypocenter, depth: depthKm };
     setHypocenterState(updated);
     if (isPlaying || simTime > 0) {
-      reset(createSimulationConfig(updated, timeScale));
+      resetSimulation(createSimulationConfig(updated, timeScale));
     }
-  }, [hypocenter, isPlaying, simTime, timeScale, reset]);
+  }, [hypocenter, isPlaying, simTime, timeScale, resetSimulation]);
 
   const setMagnitude = useCallback((mw: number) => {
     const updated = { ...hypocenter, magnitude: mw };
     setHypocenterState(updated);
     if (isPlaying || simTime > 0) {
-      reset(createSimulationConfig(updated, timeScale));
+      resetSimulation(createSimulationConfig(updated, timeScale));
     }
-  }, [hypocenter, isPlaying, simTime, timeScale, reset]);
+  }, [hypocenter, isPlaying, simTime, timeScale, resetSimulation]);
 
   const setTimeScale = useCallback((speed: number) => {
     setTimeScaleState(speed);
