@@ -56,6 +56,25 @@ describe('EventSequencer reports', () => {
     expect(report?.summary).toContain('2都道府県');
   });
 
+  it('issues a follow-up flash report when observed intensity rises after the first report', () => {
+    const sequencer = new EventSequencer();
+    const prefCodes = new Uint8Array(2).fill(13);
+    const initial = [
+      stationTrigger(0, StationState.S_ARRIVED, '3'),
+      stationTrigger(1, StationState.S_ARRIVED, '3')
+    ];
+
+    sequencer.update(90, 2, null, hypocenter, initial, prefCodes);
+    const followUp = [
+      stationTrigger(0, StationState.S_ARRIVED, '5-'),
+      stationTrigger(1, StationState.S_ARRIVED, '5-')
+    ];
+    const result = sequencer.update(100, 2, null, hypocenter, followUp, prefCodes);
+
+    expect(result.event?.type).toBe('FLASH_REPORT');
+    expect(result.event?.type === 'FLASH_REPORT' ? result.event.payload.maxIntensity : null).toBe('5-');
+  });
+
   it('does not issue an intensity report when observed shaking is below intensity 3', () => {
     const sequencer = new EventSequencer();
     const prefCodes = new Uint8Array(50).fill(13);
@@ -71,7 +90,7 @@ describe('EventSequencer reports', () => {
     expect(result.milestone).toBeUndefined();
   });
 
-  it('reports distant prefectures activated by the attenuation correction', () => {
+  it('reports only prefectures with a non-zero estimated long-period class', () => {
     const sequencer = new EventSequencer();
     const northernHypocenter: EarthquakeHypocenter = {
       ...hypocenter,
@@ -105,7 +124,7 @@ describe('EventSequencer reports', () => {
     expect(result.event?.type).toBe('LPGM_REPORT');
     expect(affectedPrefectures).toEqual(expected);
     expect(affectedPrefectures.some((prefecture) => prefecture.prefName === '北海道')).toBe(true);
-    expect(affectedPrefectures.some((prefecture) => prefecture.prefName === '東京都')).toBe(true);
+    expect(affectedPrefectures.some((prefecture) => prefecture.prefName === '東京都')).toBe(false);
   });
 
   it('issues detailed EARTHQUAKE_INFO report at simTime >= 180s', () => {

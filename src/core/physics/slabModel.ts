@@ -83,7 +83,7 @@ export class Slab2Model {
   public getDepthContours(thresholds: number[]): SlabDepthContour[] {
     const contours: SlabDepthContour[] = [];
 
-    for (const { metadata, depthPixels } of this.grids) {
+    for (const { metadata, depthPixels, thicknessPixels } of this.grids) {
       const sampleDepth = (x: number, y: number): number | null => {
         const pixelIndex = (y * metadata.width + x) * 4;
         const encodedDepth = (depthPixels[pixelIndex] << 8) | depthPixels[pixelIndex + 1];
@@ -201,6 +201,32 @@ export class Slab2Model {
       if (depthKm >= topDepthKm && depthKm <= topDepthKm + thicknessKm) return true;
     }
     return false;
+  }
+
+  public getTopDepthKm(lat: number, lon: number): number | null {
+    let shallowestDepth: number | null = null;
+    for (const { metadata, depthPixels, thicknessPixels } of this.grids) {
+      if (
+        lon < metadata.minLon || lon > metadata.maxLon ||
+        lat < metadata.minLat || lat > metadata.maxLat
+      ) {
+        continue;
+      }
+
+      const x = Math.round((lon - metadata.minLon) / metadata.gridStepDegrees);
+      const y = Math.round((metadata.maxLat - lat) / metadata.gridStepDegrees);
+      if (x < 0 || x >= metadata.width || y < 0 || y >= metadata.height) continue;
+
+      const pixelIndex = (y * metadata.width + x) * 4;
+      const encodedDepth = (depthPixels[pixelIndex] << 8) | depthPixels[pixelIndex + 1];
+      const encodedThickness = (thicknessPixels[pixelIndex] << 8) | thicknessPixels[pixelIndex + 1];
+      if (encodedDepth === 0 || encodedThickness === 0) continue;
+
+      const depthKm = metadata.depthOffsetKm + (encodedDepth - 1) / metadata.depthScale;
+      shallowestDepth = shallowestDepth === null ? depthKm : Math.min(shallowestDepth, depthKm);
+    }
+
+    return shallowestDepth;
   }
 }
 

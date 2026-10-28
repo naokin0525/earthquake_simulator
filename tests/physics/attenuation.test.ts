@@ -7,64 +7,105 @@
 import { describe, it, expect } from 'vitest';
 import {
   calculateBedrockPgv,
-  calculateMorikawaCorrectionTerms,
-  calculateTrenchAxisDistanceKm,
-  PACIFIC_TRENCH_AXIS_POINTS,
+  integrateDirectRayPath,
   calculateSurfacePgv,
   calculateContinuousJmaIntensity,
   quantizeJmaIntensity,
   calculateJmaIntensity
 } from '../../src/core/physics/attenuation';
+import { Slab2Model, SlabGridRaster } from '../../src/core/physics/slabModel';
+
+function createSlabModel(withSlab: boolean): Slab2Model {
+  const metadata = {
+    id: 'test',
+    label: 'test',
+    depthImage: '',
+    thicknessImage: '',
+    minLon: 0,
+    maxLon: 0.1,
+    minLat: -0.1,
+    maxLat: 0,
+    width: 3,
+    height: 3,
+    gridStepDegrees: 0.05,
+    depthOffsetKm: 0,
+    depthScale: 1,
+    thicknessOffsetKm: 0,
+    thicknessScale: 1,
+    validCells: 9
+  };
+  const depthPixels = new Uint8ClampedArray(3 * 3 * 4);
+  const thicknessPixels = new Uint8ClampedArray(3 * 3 * 4);
+  if (withSlab) {
+    for (let i = 0; i < depthPixels.length; i += 4) {
+      depthPixels[i + 1] = 51;
+      thicknessPixels[i + 1] = 101;
+    }
+  }
+  return Slab2Model.fromRasters([
+    { metadata, depthPixels, thicknessPixels } satisfies SlabGridRaster
+  ]);
+}
 
 describe('Si & Midorikawa (1999) PGV & JMA Intensity Engine', () => {
   it('should compute valid bedrock PGV for 2011 Tohoku Mw 9.0 benchmark at 100km distance', () => {
     // 2011 Tohoku Mw 9.0, depth = 24km, R = 100km
-    const bedrockPgv = calculateBedrockPgv(100.0, 24.0, 9.0, 0.0);
+    const bedrockPgv = calculateBedrockPgv(100.0, 24.0, 9.0);
     expect(bedrockPgv).toBeGreaterThan(10.0); // > 10 cm/s
     expect(bedrockPgv).toBeLessThan(150.0);   // < 150 cm/s
   });
 
   it('should compute valid bedrock PGV for 2016 Kumamoto M 7.3 benchmark at near-field 20km distance', () => {
     // 2016 Kumamoto Mw 7.1 (Mj 7.3), depth = 12km, R = 20km
-    const bedrockPgv = calculateBedrockPgv(20.0, 12.0, 7.1, 0.0);
+    const bedrockPgv = calculateBedrockPgv(20.0, 12.0, 7.1);
     expect(bedrockPgv).toBeGreaterThan(15.0); // Bedrock PGV ~ 22.8 cm/s (Surface PGV ~ 45 cm/s, JMA 5+/6-)
     expect(bedrockPgv).toBeLessThan(300.0);
   });
 
-  it('does not apply the removed ad-hoc slab path boost', () => {
-    const baseline = calculateBedrockPgv(100, 200, 7, 0, 'crustal');
-    const fullSlabPath = calculateBedrockPgv(100, 200, 7, 1, 'crustal');
-    expect(fullSlabPath).toBe(baseline);
+  it('uses the soft-saturating depth source term', () => {
+    const atCriticalDepth = calculateBedrockPgv(100, 80, 7);
+    const beyondCriticalDepth = calculateBedrockPgv(100, 160, 7);
+    expect(beyondCriticalDepth / atCriticalDepth).toBeCloseTo(10 ** (0.0038 * 80 * Math.log(2)), 10);
   });
 
-  it('uses the actual depth in the baseline model', () => {
-    const deepFocusPgv = calculateBedrockPgv(800, 470, 7.0);
-    const deepestCalibratedPgv = calculateBedrockPgv(800, 60, 7.0);
-
-    expect(deepFocusPgv / deepestCalibratedPgv).toBeCloseTo(10 ** (0.0038 * 410), 10);
+  it('falls back to the homogeneous Si & Midorikawa attenuation equation without Slab2 inputs', () => {
+    const distance = 100;
+    const depth = 100;
+    const magnitude = 7;
+    const sourceTerm = 0.0038 * 80 + 0.0038 * 80 * Math.log(1 + (depth - 80) / 80);
+    const expected = 10 ** (
+      0.58 * magnitude + sourceTerm + 0.12 - 1.29 -
+      Math.log10(distance + 0.0028 * 10 ** (0.5 * magnitude)) -
+      0.002 * distance
+    );
+    expect(calculateBedrockPgv(distance, depth, magnitude)).toBeCloseTo(expected, 12);
   });
 
-  it('calculates Morikawa correction terms at their specified boundaries', () => {
-    expect(calculateMorikawaCorrectionTerms(300, 30, 100)).toEqual({ log10V1: 0, log10V2: 0 });
-    expect(calculateMorikawaCorrectionTerms(300, 100, 100).log10V1)
-      .toBeCloseTo((-4.0e-5 * 100 + 9.9e-3) * 70);
-    expect(calculateMorikawaCorrectionTerms(300, 100, 400).log10V1).toBeCloseTo(-0.0061 * 70);
-    expect(calculateMorikawaCorrectionTerms(300, 100, 247.5).log10V1).toBeCloseTo(0);
-    expect(calculateMorikawaCorrectionTerms(600, 30, 100).log10V2)
-      .toBeCloseTo(2.1 * Math.log10(2) - 0.01);
+  it('integrates crust, mantle wedge, and slab lengths on the direct ray', () => {
+    const path = integrateDirectRayPath(0, 0.05, 100, 0, 0.05, createSlabModel(true), 5);
+    expect(path.lCrustKm).toBeGreaterThan(0);
+    expect(path.lSlabKm).toBeGreaterThan(0);
+    expect(path.lWedgeKm).toBeGreaterThan(0);
+    expect(path.totalInelasticLoss).toBeCloseTo(
+      path.lCrustKm * 0.002 + path.lWedgeKm * 0.0055 + path.lSlabKm * 0.0004,
+      10
+    );
 
-    const pacificSidePgv = calculateBedrockPgv(300, 100, 7, 0, 'crustal', undefined, undefined, 100);
-    const seaOfJapanSidePgv = calculateBedrockPgv(300, 100, 7, 0, 'crustal', undefined, undefined, 400);
-    expect(pacificSidePgv).toBeGreaterThan(seaOfJapanSidePgv);
+    const wedgePath = integrateDirectRayPath(0, 0.05, 100, 0, 0.05, undefined, 5);
+    expect(wedgePath.lWedgeKm).toBeGreaterThan(0);
+    expect(wedgePath.totalInelasticLoss).toBeGreaterThan(path.totalInelasticLoss);
   });
 
-  it('computes trench distance to the axis and applies corrections to JMA predictions', () => {
-    const [stationLat, stationLon] = PACIFIC_TRENCH_AXIS_POINTS[0];
-    expect(calculateTrenchAxisDistanceKm(stationLat, stationLon)).toBeCloseTo(0, 8);
+  it('uses a slab-guided path only when Slab2 data exists beneath the station', () => {
+    const withSlab = createSlabModel(true);
+    const withoutSlab = createSlabModel(false);
+    const guidedPgv = calculateBedrockPgv(100, 100, 7, 0, 0.05, 0, 0.05, withSlab);
+    const directOnlyPgv = calculateBedrockPgv(100, 100, 7, 0, 0.05, 0, 0.05, withoutSlab);
+    expect(guidedPgv).toBeGreaterThan(directOnlyPgv);
 
-    const station = calculateJmaIntensity(400, 150, 7, 1, 0, undefined, stationLat, stationLon);
-    expect(station.log10V1).toBeGreaterThan(0);
-    expect(station.log10V2).toBeGreaterThan(0);
+    const shallowPgv = calculateBedrockPgv(100, 50, 7, 0, 0.05, 0, 0.05, withSlab);
+    const shallowWithoutSlabPgv = calculateBedrockPgv(100, 50, 7, 0, 0.05, 0, 0.05, withoutSlab);
+    expect(shallowPgv).toBeCloseTo(shallowWithoutSlabPgv, 10);
   });
 
   it('should scale surface PGV proportionally with site amplification factor ARV', () => {

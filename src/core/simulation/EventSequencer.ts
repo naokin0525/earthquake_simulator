@@ -20,6 +20,12 @@ import {
 import { PREFECTURE_CENTROIDS } from '../eew/EEWEngine';
 import { isJmaGreaterOrEqual } from '../physics/attenuation';
 import { estimateLPGM } from '../physics/lpgm';
+import { Slab2Model } from '../physics/slabModel';
+
+const SUB_REGION_GEOJSON_URL = new URL(
+  '../../../data_references/20240520_AreaForecastLocalE_GIS/sub_regions.geojson',
+  import.meta.url
+).toString();
 
 export type SequencerEvent =
   | { type: 'EEW_WARNING_TRIGGERED'; payload: EEWReport }
@@ -64,24 +70,35 @@ export function estimateEpicenterRegionName(lat: number, lon: number): string {
 }
 
 export class EventSequencer {
+  constructor(private readonly slabModel?: Slab2Model) {
+    this.loadSubRegions();
+  }
+
   private milestones: Map<SimulationMilestoneType, SimulationMilestone> = new Map();
+  private subRegions: Array<{ code: string; name: string; lat: number; lon: number }> = [];
   private sArrivedStations = new Set<number>();
   private maxIntensityByPrefecture = new Map<number, JmaIntensityScale>();
+  private maxIntensityByRegion = new Map<string, JmaIntensityScale>();
   private isWarningIssued = false;
   private isFlashReportIssued = false;
   private isEarthquakeInfoIssued = false;
   private isLpgmReportIssued = false;
   private isFinalReportIssued = false;
+  private isUsingSubRegionBreakdown = false;
+  private lastFlashReport: { issuedTime: number; maxIntensity: JmaIntensityScale; regionNames: Set<string> } | null = null;
 
   public reset(): void {
     this.milestones.clear();
     this.sArrivedStations.clear();
     this.maxIntensityByPrefecture.clear();
+    this.maxIntensityByRegion.clear();
     this.isWarningIssued = false;
     this.isFlashReportIssued = false;
     this.isEarthquakeInfoIssued = false;
     this.isLpgmReportIssued = false;
     this.isFinalReportIssued = false;
+    this.isUsingSubRegionBreakdown = false;
+    this.lastFlashReport = null;
   }
 
   /**
@@ -93,12 +110,14 @@ export class EventSequencer {
     eewReport: EEWReport | null,
     hypo: EarthquakeHypocenter | undefined,
     newTriggers: readonly StationTriggerEvent[],
-    stationPrefCodes: Uint8Array
+    stationPrefCodes: Uint8Array,
+    stationLats?: Float32Array,
+    stationLons?: Float32Array
   ): {
     event?: SequencerEvent;
     milestone?: SimulationMilestone
   } {
-    this.recordSArrivals(newTriggers, stationPrefCodes);
+    this.recordSArrivals(newTriggers, stationPrefCodes, stationLats, stationLons);
 
     // 1. Origin (t=0)
     if (simTime === 0) {
@@ -125,11 +144,17 @@ export class EventSequencer {
       };
     }
 
-    // 5. 震度速報: issue around 90 seconds only when intensity 3 or higher was observed.
-    if (simTime >= 90.0 && !this.isFlashReportIssued && this.hasObservedIntensityAtLeast('3')) {
+    // 5. 震度速報: issue around 90 seconds for observed intensity 3+ and allow follow-up reports
+    // when the intensity increases or new affected regions are confirmed.
+    if (simTime >= 90.0 && this.hasObservedIntensityAtLeast('3')) {
       const report = this.generateFlashReport(simTime);
-      if (report) {
+      if (report && this.shouldIssueFlashReport(report, simTime)) {
         this.isFlashReportIssued = true;
+        this.lastFlashReport = {
+          issuedTime: simTime,
+          maxIntensity: report.maxIntensity,
+          regionNames: new Set(report.prefectures.map((p) => p.prefName))
+        };
         this.emitMilestone('FLASH_REPORT', simTime, '震度速報 (約1分半後)');
         return {
           event: { type: 'FLASH_REPORT', payload: report },
@@ -186,9 +211,24 @@ export class EventSequencer {
   }
 
   private hasObservedIntensityAtLeast(threshold: JmaIntensityScale): boolean {
-    return Array.from(this.maxIntensityByPrefecture.values()).some((intensity) =>
+    const regionalValues = Array.from(this.maxIntensityByRegion.values());
+    const prefecturalValues = Array.from(this.maxIntensityByPrefecture.values());
+    return [...regionalValues, ...prefecturalValues].some((intensity) =>
       isJmaGreaterOrEqual(intensity, threshold)
     );
+  }
+
+  private shouldIssueFlashReport(report: IntensityFlashReport, simTime: number): boolean {
+    if (!this.lastFlashReport) {
+      return true;
+    }
+
+    const previousRegions = this.lastFlashReport.regionNames;
+    const regionAdded = report.prefectures.some((entry) => !previousRegions.has(entry.prefName));
+    const intensityAdded = report.maxIntensity !== this.lastFlashReport.maxIntensity &&
+      isJmaGreaterOrEqual(report.maxIntensity, this.lastFlashReport.maxIntensity);
+
+    return regionAdded || intensityAdded;
   }
 
   private emitMilestone(type: SimulationMilestoneType, time: number, label: string): { milestone: SimulationMilestone } {
@@ -199,7 +239,9 @@ export class EventSequencer {
 
   private recordSArrivals(
     newTriggers: readonly StationTriggerEvent[],
-    stationPrefCodes: Uint8Array
+    stationPrefCodes: Uint8Array,
+    stationLats?: Float32Array,
+    stationLons?: Float32Array
   ): void {
     for (const trigger of newTriggers) {
       const { stationIndex } = trigger;
@@ -207,43 +249,169 @@ export class EventSequencer {
         trigger.state !== StationState.S_ARRIVED ||
         !Number.isInteger(stationIndex) ||
         stationIndex < 0 ||
-        stationIndex >= stationPrefCodes.length ||
-        this.sArrivedStations.has(stationIndex)
+        stationIndex >= stationPrefCodes.length
       ) {
         continue;
       }
 
       const prefCode = stationPrefCodes[stationIndex];
       const prefecture = PREFECTURE_CENTROIDS[prefCode];
-      if (!prefecture) continue;
+      const regionName = this.resolveRegionName(stationIndex, stationLats, stationLons, prefCode, prefecture?.name);
+      if (!regionName) continue;
+      if (stationLats && stationLons && regionName !== prefecture?.name) {
+        this.isUsingSubRegionBreakdown = true;
+      }
 
       this.sArrivedStations.add(stationIndex);
       const intensity = trigger.instrumentalIntensityScale ?? trigger.intensity;
-      const currentMax = this.maxIntensityByPrefecture.get(prefCode);
+      const currentMax = this.maxIntensityByRegion.get(regionName) ?? this.maxIntensityByPrefecture.get(prefCode);
       if (!currentMax || isJmaGreaterOrEqual(intensity, currentMax)) {
+        this.maxIntensityByRegion.set(regionName, intensity);
         this.maxIntensityByPrefecture.set(prefCode, intensity);
       }
     }
   }
 
+  private resolveRegionName(
+    stationIndex: number,
+    stationLats?: Float32Array,
+    stationLons?: Float32Array,
+    prefCode?: number,
+    fallbackName?: string
+  ): string | null {
+    if (stationLats && stationLons && stationIndex >= 0 && stationIndex < stationLats.length && stationIndex < stationLons.length) {
+      const lat = stationLats[stationIndex];
+      const lon = stationLons[stationIndex];
+      if (Number.isFinite(lat) && Number.isFinite(lon)) {
+        const region = this.findNearestRegion(lat, lon);
+        if (region) {
+          return region.name;
+        }
+      }
+    }
+
+    if (typeof prefCode === 'number') {
+      return PREFECTURE_CENTROIDS[prefCode]?.name ?? fallbackName ?? null;
+    }
+
+    return fallbackName ?? null;
+  }
+
+  private loadSubRegions(): void {
+    if (typeof fetch !== 'function') return;
+
+    fetch(SUB_REGION_GEOJSON_URL)
+      .then((response) => {
+        if (!response.ok) throw new Error(`Failed to load sub-region GeoJSON: ${response.status}`);
+        return response.json();
+      })
+      .then((geojson: { features?: Array<{ properties?: { code?: string; name?: string }; geometry?: any }> }) => {
+        const features = geojson.features ?? [];
+        const entries: Array<{ code: string; name: string; lat: number; lon: number }> = [];
+
+        for (const feature of features) {
+          const properties = feature.properties ?? {};
+          const code = properties.code ?? '';
+          const name = properties.name ?? '';
+          if (!code && !name) continue;
+
+          const centroid = this.calculateFeatureCentroid(feature.geometry);
+          if (!centroid) continue;
+
+          entries.push({ code, name, lat: centroid.lat, lon: centroid.lon });
+        }
+
+        this.subRegions = entries;
+      })
+      .catch(() => {
+        this.subRegions = [];
+      });
+  }
+
+  private calculateFeatureCentroid(geometry: any): { lat: number; lon: number } | null {
+    if (!geometry) return null;
+
+    const coords: Array<[number, number]> = [];
+    const collect = (ring: any): void => {
+      if (!Array.isArray(ring)) return;
+      for (const point of ring) {
+        if (Array.isArray(point) && point.length >= 2 && Number.isFinite(point[0]) && Number.isFinite(point[1])) {
+          coords.push([point[0], point[1]]);
+        } else if (Array.isArray(point)) {
+          collect(point);
+        }
+      }
+    };
+
+    if (geometry.type === 'Polygon') {
+      for (const ring of geometry.coordinates) {
+        collect(ring);
+      }
+    } else if (geometry.type === 'MultiPolygon') {
+      for (const polygon of geometry.coordinates) {
+        for (const ring of polygon) {
+          collect(ring);
+        }
+      }
+    } else {
+      return null;
+    }
+
+    if (coords.length === 0) return null;
+
+    let lat = 0;
+    let lon = 0;
+    for (const [lng, latCoord] of coords) {
+      lon += lng;
+      lat += latCoord;
+    }
+
+    return {
+      lat: lat / coords.length,
+      lon: lon / coords.length
+    };
+  }
+
+  private findNearestRegion(lat: number, lon: number): { code: string; name: string; lat: number; lon: number } | null {
+    const regionEntries = this.subRegions.length > 0
+      ? this.subRegions
+      : Object.values(PREFECTURE_CENTROIDS).map((prefecture) => ({
+          code: String(prefecture.name),
+          name: prefecture.name,
+          lat: prefecture.lat,
+          lon: prefecture.lon
+        }));
+
+    let closest = null;
+    let minDistance = Number.POSITIVE_INFINITY;
+    for (const region of regionEntries) {
+      const distance = Math.hypot(region.lat - lat, region.lon - lon);
+      if (distance < minDistance) {
+        minDistance = distance;
+        closest = region;
+      }
+    }
+
+    return closest;
+  }
+
   private generateFlashReport(time: number): IntensityFlashReport | null {
-    if (this.maxIntensityByPrefecture.size === 0) return null;
+    const regionEntries = (this.maxIntensityByRegion.size > 0 ? this.maxIntensityByRegion : this.maxIntensityByPrefecture) as Map<string | number, JmaIntensityScale>;
+    if (regionEntries.size === 0) return null;
 
     const intensities: IntensityFlashReport['intensities'] = {};
     const prefectures: IntensityFlashReport['prefectures'] = [];
     let maxIntensity: JmaIntensityScale = '0';
 
-    for (const [prefCode, intensity] of this.maxIntensityByPrefecture) {
-      const prefecture = PREFECTURE_CENTROIDS[prefCode];
-      if (!prefecture) continue;
-
-      // Flash report only lists intensity >= 3
+    for (const [regionKey, intensity] of regionEntries) {
+      const regionName = regionKey.toString();
+      const regionCode = Number(regionKey);
       if (isJmaGreaterOrEqual(intensity, '3')) {
         intensities[intensity] ??= [];
-        intensities[intensity]!.push(prefecture.name);
+        intensities[intensity]!.push(regionName);
         prefectures.push({
-          prefCode,
-          prefName: prefecture.name,
+          prefCode: Number.isFinite(regionCode) ? regionCode : 0,
+          prefName: regionName,
           maxIntensity: intensity
         });
       }
@@ -253,31 +421,32 @@ export class EventSequencer {
       }
     }
 
+    const regionLabel = this.isUsingSubRegionBreakdown ? '地域' : '都道府県';
+
     return {
       issuedTime: time,
       maxIntensity,
       intensities,
       prefectures,
-      summary: `観測点${this.sArrivedStations.size}地点のS波到達を集計。${this.maxIntensityByPrefecture.size}都道府県の最大震度は${maxIntensity}相当です。`
+      summary: `観測点${this.sArrivedStations.size}地点のS波到達を集計。${regionEntries.size}${regionLabel}の最大震度は${maxIntensity}相当です。`
     };
   }
 
   private generateEarthquakeInfoReport(time: number, hypo: EarthquakeHypocenter): EarthquakeInfoReport {
+    const regionEntries = (this.maxIntensityByRegion.size > 0 ? this.maxIntensityByRegion : this.maxIntensityByPrefecture) as Map<string | number, JmaIntensityScale>;
     const intensities: EarthquakeInfoReport['intensities'] = {};
     const prefectures: EarthquakeInfoReport['prefectures'] = [];
     let maxIntensity: JmaIntensityScale = '0';
 
-    for (const [prefCode, intensity] of this.maxIntensityByPrefecture) {
-      const prefecture = PREFECTURE_CENTROIDS[prefCode];
-      if (!prefecture) continue;
-
-      // Full report includes intensity >= 1
+    for (const [regionKey, intensity] of regionEntries) {
+      const regionName = regionKey.toString();
+      const regionCode = Number(regionKey);
       if (isJmaGreaterOrEqual(intensity, '1')) {
         intensities[intensity] ??= [];
-        intensities[intensity]!.push(prefecture.name);
+        intensities[intensity]!.push(regionName);
         prefectures.push({
-          prefCode,
-          prefName: prefecture.name,
+          prefCode: Number.isFinite(regionCode) ? regionCode : 0,
+          prefName: regionName,
           maxIntensity: intensity
         });
       }
@@ -305,7 +474,13 @@ export class EventSequencer {
     let maxClass: 1 | 2 | 3 | 4 = 1;
 
     for (const [code, prefecture] of Object.entries(PREFECTURE_CENTROIDS)) {
-      const result = estimateLPGM(hypo, prefecture.lat, prefecture.lon, prefecture.defaultArv);
+      const result = estimateLPGM(
+        hypo,
+        prefecture.lat,
+        prefecture.lon,
+        prefecture.defaultArv,
+        this.slabModel
+      );
       if (result.classLevel === 0) continue;
 
       if (result.classLevel > maxClass) {

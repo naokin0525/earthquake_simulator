@@ -73,7 +73,9 @@ function startTickLoop(): void {
       tickState.currentEEWReport,
       simulationEngine.getConfig()?.hypocenter,
       tickState.newTriggers,
-      stationBuffer.prefCodes
+      stationBuffer.prefCodes,
+      stationBuffer.lats,
+      stationBuffer.lons
     );
 
     if (seqResult.milestone) {
@@ -112,7 +114,7 @@ self.onmessage = async (event: MessageEvent<WorkerInboundAction>) => {
         const slabModel = await Slab2Model.load();
         simulationEngine = new SimulationEngine(stationBuffer, slabModel);
         eewEngine = new EEWEngine(slabModel);
-        eventSequencer = new EventSequencer();
+        eventSequencer = new EventSequencer(slabModel);
         postWorkerMessage({ type: 'READY' });
         break;
       }
@@ -168,7 +170,7 @@ self.onmessage = async (event: MessageEvent<WorkerInboundAction>) => {
             (first, trigger) => !first || trigger.triggerTime < first.triggerTime ? trigger : first,
             null
           );
-          const origin = eventSequencer.update(0, 0, null, hypo, [], stationBuffer.prefCodes);
+          const origin = eventSequencer.update(0, 0, null, hypo, [], stationBuffer.prefCodes, stationBuffer.lats, stationBuffer.lons);
           if (origin.milestone) milestones.push(origin.milestone);
           if (firstTrigger) {
             const first = eventSequencer.update(
@@ -177,7 +179,9 @@ self.onmessage = async (event: MessageEvent<WorkerInboundAction>) => {
               null,
               hypo,
               [firstTrigger],
-              stationBuffer.prefCodes
+              stationBuffer.prefCodes,
+              stationBuffer.lats,
+              stationBuffer.lons
             );
             if (first.milestone) milestones.push(first.milestone);
           }
@@ -190,7 +194,9 @@ self.onmessage = async (event: MessageEvent<WorkerInboundAction>) => {
                 eewReport,
                 hypo,
                 tick.newTriggers,
-                stationBuffer.prefCodes
+                stationBuffer.prefCodes,
+                stationBuffer.lats,
+                stationBuffer.lons
               );
               if (result.milestone) milestones.push(result.milestone);
               if (!result.event && !result.milestone) break;

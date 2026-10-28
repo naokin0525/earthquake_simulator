@@ -5,6 +5,7 @@
 import { EarthquakeHypocenter } from '../types';
 import { calculateBedrockPgv } from './attenuation';
 import { calculateSurfacePgv } from './siteResponse';
+import { Slab2Model } from './slabModel';
 
 const DAMPING_RATIO = 0.05;
 const SAMPLE_INTERVAL_SEC = 0.05;
@@ -132,7 +133,8 @@ export function estimateLPGM(
   hypo: EarthquakeHypocenter,
   lat: number,
   lon: number,
-  surfaceAmplification = 1
+  surfaceAmplification = 1,
+  slabModel?: Slab2Model
 ): LPGMResult {
   if (hypo.magnitude < 6.5 || hypo.depth > 100) {
     return { sv: 0, classLevel: 0 };
@@ -144,10 +146,11 @@ export function estimateLPGM(
     faultDistance,
     hypo.depth,
     hypo.magnitude,
-    0.0,
-    undefined,
+    hypo.lat,
+    hypo.lon,
     lat,
-    lon
+    lon,
+    slabModel
   );
   const surfacePgv = calculateSurfacePgv(bedrockPgv, surfaceAmplification);
   const sv = surfacePgv * getSyntheticResponseFactor();

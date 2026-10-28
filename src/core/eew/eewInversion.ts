@@ -95,8 +95,8 @@ function estimateMagnitude(
         distance,
         depth,
         magnitude,
-        0.0,
-        undefined,
+        lat,
+        lon,
         observation.lat,
         observation.lon
       );

@@ -142,9 +142,10 @@ export const SimulationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     };
 
     updateAmbientNoise();
-    const timer = setInterval(updateAmbientNoise, 1000);
+    const effectiveTimeScale = Number.isFinite(timeScale) && timeScale > 0 ? timeScale : 1;
+    const timer = setInterval(updateAmbientNoise, 1000 / effectiveTimeScale);
     return () => clearInterval(timer);
-  }, [isKyoshinMonitor, stationBuffer]);
+  }, [isKyoshinMonitor, stationBuffer, timeScale]);
 
   const clearReportState = useCallback(() => {
     eewReportRef.current = null;

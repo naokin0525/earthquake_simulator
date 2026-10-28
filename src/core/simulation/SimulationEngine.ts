@@ -90,7 +90,10 @@ export class SimulationEngine {
         rSlab,
         undefined,
         stLat,
-        stLon
+        stLon,
+        hypo.lat,
+        hypo.lon,
+        this.slabModel
       ).jmaScale === '0' ? 1 : 0;
 
       // Add a small Gaussian pick error to mimic real station arrival-time picking variability.
@@ -182,7 +185,10 @@ export class SimulationEngine {
           rSlab,
           undefined,
           stLat,
-          stLon
+          stLon,
+          hypo.lat,
+          hypo.lon,
+          this.slabModel
         );
 
         this.measuredPgvs[i] = pgvSurface;
@@ -224,7 +230,10 @@ export class SimulationEngine {
           rSlab,
           undefined,
           stLat,
-          stLon
+          stLon,
+          hypo.lat,
+          hypo.lon,
+          this.slabModel
         );
 
         this.measuredPgvs[i] = pgvSurface;

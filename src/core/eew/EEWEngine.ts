@@ -171,7 +171,10 @@ export class EEWEngine {
          rSlab,
          undefined,
          pref.lat,
-         pref.lon
+         pref.lon,
+         estHypo.lat,
+         estHypo.lon,
+         this.slabModel
        );
 
        if (isJmaGreaterOrEqual(jmaScale, maxPredictedIntensity)) {
@@ -179,7 +182,7 @@ export class EEWEngine {
        }
 
        // LPGM estimation for this prefecture
-       const lpgmResult = estimateLPGM(estHypo, pref.lat, pref.lon, pref.defaultArv);
+       const lpgmResult = estimateLPGM(estHypo, pref.lat, pref.lon, pref.defaultArv, this.slabModel);
        if (lpgmResult.classLevel > maxLpgmClass) {
          maxLpgmClass = lpgmResult.classLevel;
        }

@@ -251,9 +251,18 @@ describe('Subducting Slab & Anomalous Seismic Intensity Model', () => {
     const tokyoWithoutSlab = computeTravelTimes(hypocenter, tokyo.lat, tokyo.lon);
     expect(tokyoWithSlab.pArrivalTime).toBeLessThan(tokyoWithoutSlab.pArrivalTime);
 
-    const pgvWithSlab = calculateBedrockPgv(500, hypocenter.depth, hypocenter.magnitude, tokyoFraction);
-    const pgvWithoutSlab = calculateBedrockPgv(500, hypocenter.depth, hypocenter.magnitude, 0);
-    expect(pgvWithSlab).toBe(pgvWithoutSlab);
+    const pgvWithSlab = calculateBedrockPgv(
+      500,
+      hypocenter.depth,
+      hypocenter.magnitude,
+      hypocenter.lat,
+      hypocenter.lon,
+      tokyo.lat,
+      tokyo.lon,
+      model
+    );
+    const pgvWithoutSlab = calculateBedrockPgv(500, hypocenter.depth, hypocenter.magnitude);
+    expect(pgvWithSlab).toBeGreaterThan(pgvWithoutSlab);
 
     const stations: StationDataBuffer = {
       totalStations: 2,
@@ -282,7 +291,10 @@ describe('Subducting Slab & Anomalous Seismic Intensity Model', () => {
       tokyoFraction,
       undefined,
       stations.lats[0],
-      stations.lons[0]
+      stations.lons[0],
+      hypocenter.lat,
+      hypocenter.lon,
+      model
     );
     expect(tokyoEvent?.intensity).toBe(expectedIntensity.jmaScale);
     expect(tokyoEvent?.pgvSurface).toBeCloseTo(expectedIntensity.pgvSurface, 4);
@@ -296,7 +308,7 @@ describe('Subducting Slab & Anomalous Seismic Intensity Model', () => {
       stations.lats[0],
       stations.lons[0]
     );
-    expect(expectedIntensity.pgvSurface).toBe(expectedWithoutSlab.pgvSurface);
+    expect(expectedIntensity.pgvSurface).toBeGreaterThan(expectedWithoutSlab.pgvSurface);
   });
 
   it('should retain the legacy fallback for callers without raster data', () => {
@@ -314,11 +326,6 @@ describe('Subducting Slab & Anomalous Seismic Intensity Model', () => {
     expect(tt.vP).toBeGreaterThan(6.0); // Velocity boosted above baseline 6.0 km/s
     expect(tt.vS).toBeGreaterThan(3.5); // Velocity boosted above baseline 3.5 km/s
 
-    // Slab path affects travel speed, not the removed attenuation heuristic.
-    const pgvWithSlab = calculateBedrockPgv(tt.hypocentralDistance, hypoDeep.depth, hypoDeep.magnitude, rSlab);
-    const pgvNoSlab = calculateBedrockPgv(tt.hypocentralDistance, hypoDeep.depth, hypoDeep.magnitude, 0.0);
-
-    expect(pgvWithSlab).toBe(pgvNoSlab);
   });
 
   it('should increase average travel velocities for deep mantle paths', () => {
