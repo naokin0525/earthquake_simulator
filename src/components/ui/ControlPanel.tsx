@@ -60,7 +60,7 @@ export const ControlPanel: React.FC = () => {
         type="range"
         id="mag"
         min="0.1"
-        max="13.0"
+        max="12.0"
         step="0.01"
         value={hypocenter.magnitude}
         onChange={(e) => setMagnitude(parseFloat(e.target.value))}
@@ -103,7 +103,7 @@ export const ControlPanel: React.FC = () => {
             style={{ fontSize: '10px', padding: '5px 2px' }}
             disabled={!hasEpicenter}
             onClick={() => jumpToTime(75)}
-            title="震度速報の発表時刻 (T+75s) へジャンプ"
+            title="震度速報の発表時刻へジャンプ"
           >
             震度速報へ
           </button>
@@ -113,7 +113,7 @@ export const ControlPanel: React.FC = () => {
             style={{ fontSize: '10px', padding: '5px 2px' }}
             disabled={!hasEpicenter}
             onClick={() => jumpToTime(180)}
-            title="震源・震度情報の発表時刻 (T+180s) へジャンプ"
+            title="震源・震度情報の発表時刻へジャンプ"
           >
             震源・震度へ
           </button>
@@ -123,7 +123,7 @@ export const ControlPanel: React.FC = () => {
             style={{ fontSize: '10px', padding: '5px 2px' }}
             disabled={!hasEpicenter}
             onClick={() => jumpToTime(300)}
-            title="長周期地震動観測情報の発表時刻 (T+300s) へジャンプ"
+            title="長周期地震動観測情報の発表時刻へジャンプ"
           >
             長周期情報へ
           </button>

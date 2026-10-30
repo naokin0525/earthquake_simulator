@@ -82,6 +82,28 @@ describe('SimulationEngine State Machine & Wave Propagation', () => {
     expect(engine.getStationStates()[1]).toBe(StationState.IDLE);
   });
 
+  it('should include finite rupture extent when predicting intensity for a large shallow earthquake', () => {
+    const stations: StationDataBuffer = {
+      totalStations: 1,
+      lats: new Float32Array([35.3147]),
+      lons: new Float32Array([139]),
+      ampFactors: new Float32Array([1.5]),
+      prefCodes: new Uint8Array([13])
+    };
+    const engine = new SimulationEngine(stations);
+    engine.init({
+      hypocenter: { lat: 35, lon: 139, depth: 19, magnitude: 7.7, originTime: 0 },
+      timeScale: 1,
+      tickIntervalMs: 50,
+      noiseStdDev: 0
+    });
+
+    const tick = engine.update(20);
+
+    expect(tick.newTriggers).toHaveLength(1);
+    expect(tick.newTriggers[0].intensity).toBe('6-');
+  });
+
   it('should scale simulation time step according to timeScale multiplier', () => {
     const engine = new SimulationEngine(mockStations);
     engine.init({

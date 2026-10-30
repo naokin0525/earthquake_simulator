@@ -24,6 +24,12 @@ import {
   jmaScaleToNumeric,
   isJmaGreaterOrEqual
 } from './intensity';
+import { calculateFiniteRuptureDistance } from './finiteSource';
+
+export {
+  calculateEquivalentRuptureRadiusKm,
+  calculateFiniteRuptureDistance
+} from './finiteSource';
 
 // Re-export site response functions for backward compatibility
 export { calculateArvFromVs30, calculateSurfacePgv, calculateSurfacePga };
@@ -132,6 +138,11 @@ export function calculateBedrockPgv(
   const clampedDistance = Math.max(0.0, faultDistanceKm);
   const clampedDepth = Math.max(0.0, faultDepthKm);
   const safeMw = Math.max(0.0, Mw);
+  const effectiveDistance = calculateFiniteRuptureDistance(
+    clampedDistance,
+    clampedDepth,
+    safeMw
+  );
   const resolvedFaultType = faultType ?? inferFaultTypeFromDepth(clampedDepth);
   const faultTypeOffset =
     resolvedFaultType === 'intraplate' ? 0.12 :
@@ -145,8 +156,8 @@ export function calculateBedrockPgv(
   const saturationTerm = 0.0028 * Math.pow(10.0, 0.50 * safeMw);
 
   let directTerm =
-    -Math.log10(clampedDistance + saturationTerm) -
-    BASE_K_ATTENUATION * clampedDistance;
+    -Math.log10(effectiveDistance + saturationTerm) -
+    BASE_K_ATTENUATION * effectiveDistance;
   let guidedTerm = Number.NEGATIVE_INFINITY;
   if (
     hypoLat !== undefined &&
@@ -163,9 +174,12 @@ export function calculateBedrockPgv(
       stationLon,
       slabModel
     );
+    const directLossScale = clampedDistance > 0
+      ? effectiveDistance / clampedDistance
+      : 0;
     directTerm =
-      -Math.log10(clampedDistance + saturationTerm) -
-      directPath.totalInelasticLoss;
+      -Math.log10(effectiveDistance + saturationTerm) -
+      directPath.totalInelasticLoss * directLossScale;
 
     if (clampedDepth >= GUIDED_PATH_MIN_DEPTH_KM) {
       const slabTopDepthKm = slabModel.getTopDepthKm(stationLat, stationLon);
@@ -173,10 +187,20 @@ export function calculateBedrockPgv(
         const horizontalDistanceKm = haversineDistance(hypoLat, hypoLon, stationLat, stationLon);
         const guidedSlabLengthKm = Math.hypot(horizontalDistanceKm, clampedDepth - slabTopDepthKm);
         const guidedDistanceKm = guidedSlabLengthKm + slabTopDepthKm;
+        const effectiveGuidedDistance = calculateFiniteRuptureDistance(
+          guidedDistanceKm,
+          clampedDepth,
+          safeMw
+        );
+        const guidedLossScale = guidedDistanceKm > 0
+          ? effectiveGuidedDistance / guidedDistanceKm
+          : 0;
         const guidedLoss =
           guidedSlabLengthKm * SLAB_K_ATTENUATION +
           slabTopDepthKm * BASE_K_ATTENUATION;
-        guidedTerm = -Math.log10(guidedDistanceKm + saturationTerm) - guidedLoss;
+        guidedTerm =
+          -Math.log10(effectiveGuidedDistance + saturationTerm) -
+          guidedLoss * guidedLossScale;
       }
     }
   }

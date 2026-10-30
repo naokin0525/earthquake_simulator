@@ -1,21 +1,51 @@
+from pathlib import Path
+
 import geopandas as gpd
 
-input_shapefile = "C:/Users/naoya/Downloads/素材/プログラム/earthquake_simulator/data_references/20240520_AreaForecastLocalE_GIS/地震情報／細分区域.shp"
-output_geojson = "C:/Users/naoya/Downloads/素材/プログラム/earthquake_simulator/data_references/20240520_AreaForecastLocalE_GIS/sub_regions.geojson"
+ROOT = Path(__file__).resolve().parents[1]
+INPUT_SHAPEFILE = (
+    ROOT
+    / "data_references"
+    / "20240520_AreaForecastLocalE_GIS"
+    / "地震情報／細分区域.shp"
+)
+REFERENCE_GEOJSON = (
+    ROOT
+    / "data_references"
+    / "20240520_AreaForecastLocalE_GIS"
+    / "sub_regions.geojson"
+)
+PUBLIC_GEOJSON = ROOT / "public" / "data" / "sub_regions.geojson"
+PREFECTURES_GEOJSON = ROOT / "public" / "data" / "prefectures.geojson"
+SIMPLIFICATION_TOLERANCE_DEGREES = 0.005
 
-try:
-    print("Reading JMA Shapefile...")
-    gdf = gpd.read_file(input_shapefile, encoding="utf-8")
-    if gdf.crs is None:
-        print("Assigning EPSG:6668...")
-        gdf.crs = "EPSG:6668"
-    print("Projecting to universal GPS degrees...")
-    gdf = gdf.to_crs(epsg=4326)
-    print("Exporting to GeoJSON format...")
-    gdf.to_file(output_geojson, driver="GeoJSON")
-    print(f"\n file saved to: {output_geojson}")
-    print("\n--- Data Sample Preview ---")
-    print(gdf[["geometry"]].head())
+print("Reading JMA Shapefile...")
+gdf = gpd.read_file(INPUT_SHAPEFILE, encoding="utf-8")
+if gdf.crs is None:
+    print("Assigning EPSG:6668...")
+    gdf = gdf.set_crs("EPSG:6668")
+print("Projecting to WGS84...")
+gdf = gdf.to_crs(epsg=4326)
 
-except Exception as e:
-    print(f"An error occurred: {e}")
+print(f"Writing full reference GeoJSON to {REFERENCE_GEOJSON}...")
+REFERENCE_GEOJSON.parent.mkdir(parents=True, exist_ok=True)
+gdf.to_file(REFERENCE_GEOJSON, driver="GeoJSON")
+
+print("Simplifying boundaries for the browser map...")
+runtime_gdf = gdf.copy()
+runtime_gdf.geometry = runtime_gdf.geometry.simplify(
+    SIMPLIFICATION_TOLERANCE_DEGREES,
+    preserve_topology=True,
+)
+prefectures = gpd.read_file(PREFECTURES_GEOJSON, encoding="utf-8").to_crs(epsg=4326)
+prefecture_codes = []
+for geometry in runtime_gdf.geometry:
+    representative_point = geometry.representative_point()
+    matches = prefectures.loc[prefectures.geometry.covers(representative_point), "pref"]
+    if matches.empty:
+        raise ValueError(f"Could not assign a prefecture to forecast region {geometry.wkt[:120]}")
+    prefecture_codes.append(int(matches.iloc[0]))
+runtime_gdf["pref"] = prefecture_codes
+PUBLIC_GEOJSON.parent.mkdir(parents=True, exist_ok=True)
+runtime_gdf.to_file(PUBLIC_GEOJSON, driver="GeoJSON")
+print(f"Browser-ready sub-region GeoJSON saved to {PUBLIC_GEOJSON}")

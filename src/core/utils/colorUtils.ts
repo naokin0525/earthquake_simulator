@@ -135,12 +135,13 @@ export function getKyoshinColor(val: number): [number, number, number, number] {
   return [R, G, B, 255];
 }
 
+export const AMBIENT_NOISE_MIN_DENSITY = 10000;
 export const AMBIENT_NOISE_REFERENCE_DENSITY = 20000;
-export const AMBIENT_NOISE_MAX_INTENSITY = -1;
+export const AMBIENT_NOISE_MAX_INTENSITY = -1.5;
 export const AMBIENT_NOISE_VARIATION = 0.3;
 
 export function populationDensityToAmbientIntensity(density: number): number {
-  if (!Number.isFinite(density) || density <= 0) return -3;
+  if (!Number.isFinite(density) || density < AMBIENT_NOISE_MIN_DENSITY) return -3;
 
   const normalizedDensity = Math.min(density, AMBIENT_NOISE_REFERENCE_DENSITY);
   const intensityRange = AMBIENT_NOISE_MAX_INTENSITY + 3;
@@ -152,6 +153,8 @@ export function generateAmbientNoiseLevels(
   random: () => number = Math.random
 ): Float32Array {
   return Float32Array.from(populationDensities, (density) => {
+    if (!Number.isFinite(density) || density < AMBIENT_NOISE_MIN_DENSITY) return -3;
+
     const baseline = populationDensityToAmbientIntensity(density);
     const variation = (random() * 2 - 1) * AMBIENT_NOISE_VARIATION;
     return Math.max(-3, Math.min(AMBIENT_NOISE_MAX_INTENSITY, baseline + variation));

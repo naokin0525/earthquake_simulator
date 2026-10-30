@@ -8,6 +8,7 @@
 import { TileLayer } from '@deck.gl/geo-layers';
 import { BitmapLayer } from '@deck.gl/layers';
 import type { ShaderModule } from '@luma.gl/shadertools';
+import { calculateEquivalentRuptureRadiusKm } from '../../../core/physics/finiteSource';
 
 export interface MeshIntensityLayerProps {
   id?: string;
@@ -55,7 +56,11 @@ if (color.a < 0.1 || color.r < 0.01) {
 float siteLon = mix(meshIntensity.tileBounds.x, meshIntensity.tileBounds.z, geometry.uv.x);
 float siteLat = mix(meshIntensity.tileBounds.w, meshIntensity.tileBounds.y, geometry.uv.y);
 float epicentralDistanceKm = getEpicentralDistanceKm(siteLat, siteLon);
-float R = max(length(vec2(epicentralDistanceKm, meshIntensity.depthKm)), 0.001);
+float effectiveEpicentralDistanceKm = max(
+  0.0,
+  epicentralDistanceKm - meshIntensity.ruptureRadiusKm
+);
+float R = max(length(vec2(effectiveEpicentralDistanceKm, meshIntensity.depthKm)), 0.001);
 
 float arv = 0.5 + (color.r * 2.5);
 float saturationTerm = 0.0028 * pow(10.0, 0.50 * meshIntensity.magnitude);
@@ -72,6 +77,7 @@ type MeshIntensityUniforms = {
   hypoCoords: [number, number];
   depthKm: number;
   magnitude: number;
+  ruptureRadiusKm: number;
   tileBounds: [number, number, number, number];
 };
 
@@ -82,6 +88,7 @@ struct MeshIntensityUniforms {
   hypoCoords: vec2<f32>,
   depthKm: f32,
   magnitude: f32,
+  ruptureRadiusKm: f32,
   tileBounds: vec4<f32>,
 };
 @group(0) @binding(auto) var<uniform> meshIntensity: MeshIntensityUniforms;
@@ -91,6 +98,7 @@ layout(std140) uniform meshIntensityUniforms {
   vec2 hypoCoords;
   float depthKm;
   float magnitude;
+  float ruptureRadiusKm;
   vec4 tileBounds;
 } meshIntensity;
 `,
@@ -99,6 +107,7 @@ layout(std140) uniform meshIntensityUniforms {
   vec2 hypoCoords;
   float depthKm;
   float magnitude;
+  float ruptureRadiusKm;
   vec4 tileBounds;
 } meshIntensity;
 `,
@@ -106,6 +115,7 @@ layout(std140) uniform meshIntensityUniforms {
     hypoCoords: 'vec2<f32>',
     depthKm: 'f32',
     magnitude: 'f32',
+    ruptureRadiusKm: 'f32',
     tileBounds: 'vec4<f32>'
   }
 };
@@ -127,12 +137,13 @@ class MeshIntensityBitmapLayer extends BitmapLayer<MeshIntensityBitmapProps> {
   }
 
   draw(params: Parameters<BitmapLayer['draw']>[0]) {
-    const { hypoCoords, depthKm, magnitude, tileBounds } = this.props;
+    const { hypoCoords, depthKm, magnitude, ruptureRadiusKm, tileBounds } = this.props;
     this.state.model!.shaderInputs.setProps({
       meshIntensity: {
         hypoCoords,
         depthKm,
         magnitude,
+        ruptureRadiusKm,
         tileBounds
       }
     });
@@ -150,6 +161,7 @@ export function createMeshIntensityLayer(props: MeshIntensityLayerProps): TileLa
     tileUrl = '/tiles/mesh/{z}/{x}/{y}.png',
     id = 'mesh-intensity-layer'
   } = props;
+  const ruptureRadiusKm = calculateEquivalentRuptureRadiusKm(magnitude);
 
   return new TileLayer({
     id,
@@ -174,6 +186,7 @@ export function createMeshIntensityLayer(props: MeshIntensityLayerProps): TileLa
         hypoCoords: [hypoLat, hypoLon],
         depthKm,
         magnitude,
+        ruptureRadiusKm,
         tileBounds: [west, south, east, north]
       });
     },

@@ -7,6 +7,8 @@
 import { describe, it, expect } from 'vitest';
 import {
   calculateBedrockPgv,
+  calculateEquivalentRuptureRadiusKm,
+  calculateFiniteRuptureDistance,
   integrateDirectRayPath,
   calculateSurfacePgv,
   calculateContinuousJmaIntensity,
@@ -63,9 +65,39 @@ describe('Si & Midorikawa (1999) PGV & JMA Intensity Engine', () => {
   });
 
   it('uses the soft-saturating depth source term', () => {
-    const atCriticalDepth = calculateBedrockPgv(100, 80, 7);
-    const beyondCriticalDepth = calculateBedrockPgv(100, 160, 7);
+    const atCriticalDepth = calculateBedrockPgv(100, 80, 4.9);
+    const beyondCriticalDepth = calculateBedrockPgv(100, 160, 4.9);
     expect(beyondCriticalDepth / atCriticalDepth).toBeCloseTo(10 ** (0.0038 * 80 * Math.log(2)), 10);
+  });
+
+  it('applies finite-rupture distance to large shallow earthquakes without changing the epicenter depth', () => {
+    const magnitude = 7.7;
+    const depth = 19;
+    const epicentralDistance = 35;
+    const sourceDistance = Math.hypot(epicentralDistance, depth);
+    const ruptureRadius = calculateEquivalentRuptureRadiusKm(magnitude);
+
+    expect(calculateFiniteRuptureDistance(sourceDistance, depth, magnitude)).toBeCloseTo(
+      Math.hypot(Math.max(0, epicentralDistance - ruptureRadius), depth),
+      10
+    );
+    expect(calculateFiniteRuptureDistance(depth, depth, magnitude)).toBe(depth);
+    expect(calculateFiniteRuptureDistance(sourceDistance, depth, 4.9)).toBe(sourceDistance);
+  });
+
+  it('raises near-fault intensity for a large shallow event by accounting for rupture extent', () => {
+    const magnitude = 7.7;
+    const depth = 19;
+    const sourceDistance = Math.hypot(35, depth);
+    const result = calculateJmaIntensity(sourceDistance, depth, magnitude, 1.5);
+    const pointSourcePgv = Math.pow(10,
+      0.58 * magnitude + 0.0038 * depth - 1.29 -
+      Math.log10(sourceDistance + 0.0028 * 10 ** (0.5 * magnitude)) -
+      0.002 * sourceDistance
+    ) * 1.5;
+
+    expect(quantizeJmaIntensity(calculateContinuousJmaIntensity(pointSourcePgv))).toBe('5+');
+    expect(result.jmaScale).toBe('6-');
   });
 
   it('falls back to the homogeneous Si & Midorikawa attenuation equation without Slab2 inputs', () => {

@@ -4,6 +4,7 @@ import {
   MESH_INTENSITY_FILTER_COLOR,
   MESH_INTENSITY_SHADER_DECLARATIONS
 } from '../../src/components/map/layers/MeshIntensityLayer';
+import { calculateEquivalentRuptureRadiusKm } from '../../src/core/physics/finiteSource';
 
 describe('mesh intensity layer attenuation', () => {
   it('uses each tile pixel coordinate and source coordinates for attenuation', () => {
@@ -33,10 +34,12 @@ describe('mesh intensity layer attenuation', () => {
 
     expect(subLayer.props).toMatchObject({
       hypoCoords: [35.5, 139.5],
-      tileBounds: [138, 34, 140, 36]
+      tileBounds: [138, 34, 140, 36],
+      ruptureRadiusKm: calculateEquivalentRuptureRadiusKm(6.5)
     });
     expect(MESH_INTENSITY_FILTER_COLOR).toContain('geometry.uv');
     expect(MESH_INTENSITY_FILTER_COLOR).toContain('getEpicentralDistanceKm(siteLat, siteLon)');
+    expect(MESH_INTENSITY_FILTER_COLOR).toContain('effectiveEpicentralDistanceKm');
     expect(MESH_INTENSITY_SHADER_DECLARATIONS).toContain('meshIntensity.hypoCoords');
   });
 });

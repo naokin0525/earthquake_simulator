@@ -16,6 +16,11 @@ import { createWaveFrontLayers } from './layers/WaveFrontLayer';
 import { createHypocenterLayers } from './layers/HypocenterLayer';
 import { createMeshIntensityLayer } from './layers/MeshIntensityLayer';
 import { createGroundAmplificationLayer } from './layers/GroundAmplificationLayer';
+import {
+  assignRegionPrefectureCodes,
+  createRegionIntensityLayers,
+  type AreaFeatureCollection
+} from './layers/SubRegionLayer';
 import { StationLoader } from '../../loaders/StationLoader';
 import { Slab2Model, type SlabDepthArea } from '../../core/physics/slabModel';
 import { hexToRgba, JMA_INTENSITY_LEVELS, LPGM_INTENSITY_LEVELS } from '../../core/ui/intensityColors';
@@ -50,6 +55,7 @@ export const MapContainer: React.FC = () => {
   const [stationMetadataMap, setStationMetadataMap] = useState<Map<number, any>>(new Map());
   const [selectedStationIndex, setSelectedStationIndex] = useState<number | null>(null);
   const [slabDepthAreas, setSlabDepthAreas] = useState<SlabDepthArea[]>([]);
+  const [subRegions, setSubRegions] = useState<AreaFeatureCollection | null>(null);
 
   const {
     stationBuffer,
@@ -137,6 +143,37 @@ export const MapContainer: React.FC = () => {
       });
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+    const loadSubRegions = async () => {
+      const [regionsResponse, prefecturesResponse] = await Promise.all([
+        fetch('/data/sub_regions.geojson'),
+        fetch('/data/prefectures.geojson')
+      ]);
+      if (!regionsResponse.ok) {
+        throw new Error(`Failed to load JMA sub-regions: ${regionsResponse.status} ${regionsResponse.statusText}`);
+      }
+      if (!prefecturesResponse.ok) {
+        throw new Error(`Failed to load prefecture boundaries: ${prefecturesResponse.status} ${prefecturesResponse.statusText}`);
+      }
+
+      const [regions, prefectures] = await Promise.all([
+        regionsResponse.json() as Promise<AreaFeatureCollection>,
+        prefecturesResponse.json() as Promise<AreaFeatureCollection>
+      ]);
+      const regionsWithPrefectures = assignRegionPrefectureCodes(regions, prefectures);
+      if (!cancelled) setSubRegions(regionsWithPrefectures);
+    };
+
+    loadSubRegions().catch((error: unknown) => {
+      if (!cancelled) console.error('Failed to load colored JMA sub-regions', error);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const slabAreaCanvases = useMemo(() => slabDepthAreas.map((area) => {
     const canvas = document.createElement('canvas');
     canvas.width = area.width;
@@ -202,7 +239,7 @@ export const MapContainer: React.FC = () => {
     layers.push(
       new GeoJsonLayer({
         id: 'japan-landmass',
-        data: '/data/prefectures.geojson',
+        data: subRegions ?? [],
         filled: true,
         pickable: true,
         autoHighlight: true,
@@ -381,10 +418,12 @@ export const MapContainer: React.FC = () => {
       eewReport
     });
     layers.push(...hypoLayers);
+    layers.push(...createRegionIntensityLayers(subRegions, eewReport));
 
     return layers;
   }, [
     stationBuffer,
+    subRegions,
     stationStates,
     triggerEventsMap,
     hypocenter,

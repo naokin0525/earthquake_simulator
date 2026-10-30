@@ -22,10 +22,7 @@ import { isJmaGreaterOrEqual } from '../physics/attenuation';
 import { estimateLPGM } from '../physics/lpgm';
 import { Slab2Model } from '../physics/slabModel';
 
-const SUB_REGION_GEOJSON_URL = new URL(
-  '../../../data_references/20240520_AreaForecastLocalE_GIS/sub_regions.geojson',
-  import.meta.url
-).toString();
+const SUB_REGION_GEOJSON_URL = '/data/sub_regions.geojson';
 
 export type SequencerEvent =
   | { type: 'EEW_WARNING_TRIGGERED'; payload: EEWReport }
@@ -323,7 +320,8 @@ export class EventSequencer {
 
         this.subRegions = entries;
       })
-      .catch(() => {
+      .catch((error: unknown) => {
+        console.error('[EventSequencer] Failed to load JMA sub-region GeoJSON:', error);
         this.subRegions = [];
       });
   }

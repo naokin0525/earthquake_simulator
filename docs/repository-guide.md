@@ -130,15 +130,19 @@ Computes surface distance with the Haversine relation. For latitudes `phi1, phi2
 
 ### `src/core/physics/distance.ts`
 
-Provides the point-source distance passed to attenuation calculations. Because there is no finite fault surface, it uses hypocentral distance as a practical proxy for rupture distance: `sqrt(Delta^2 + depth^2)`. The `closestFaultDistance` export is a compatibility alias, not a separate finite-fault geometry calculation.
+Provides the point-source hypocentral distance passed to attenuation calculations: `sqrt(Delta^2 + depth^2)`. `attenuation.ts` adjusts its horizontal component with the magnitude-scaled equivalent rupture radius from `finiteSource.ts`. The `closestFaultDistance` export remains a compatibility alias, not a geometry-derived fault distance.
+
+### `src/core/physics/finiteSource.ts`
+
+Approximates finite rupture extent using the Wells-Coppersmith (1994) magnitude-area scaling, represented as a circular radius for magnitudes 5 and above. It subtracts that radius from the horizontal source-to-site distance while preserving focal depth. This improves near-fault estimates for large events, but cannot represent rupture strike, dip, or width without event-specific fault geometry.
 
 ### `src/core/physics/attenuation.ts`
 
-Implements a Si & Midorikawa (1999)-form bedrock PGV model, a time envelope, and predicted continuous JMA intensity. With fault distance `R` in km, mean fault depth `D` in km, magnitude `Mw`, and slab-path fraction `r` clamped to `[0,1]`, the implemented relation is:
+Implements a Si & Midorikawa (1999)-form bedrock PGV model, a time envelope, and predicted continuous JMA intensity. With effective source distance `Reff` in km, mean fault depth `D` in km, and magnitude `Mw`, the homogeneous path uses:
 
-`log10(PGV600) = 0.58 Mw + 0.0038 min(D, 60 km) + C - 1.29 - log10(R + 0.0028 * 10^(0.50 Mw)) - 0.002 R + 0.12 r`
+`log10(PGV600) = 0.58 Mw + S(D) + C - 1.29 - log10(Reff + 0.0028 * 10^(0.50 Mw)) - 0.002 Reff`
 
-where `D` is capped at 60 km in the empirical depth term to avoid extrapolating it to deep-focus earthquakes, `C` is `0.00` for crustal, `-0.02` for interplate, or `+0.12` for intraplate events, and `PGV600 = 10^(right-hand side)` cm/s. If no fault type is supplied, the actual source depth provides a fallback classification (`<30 km` crustal, `30–<60 km` interplate, and `>=60 km` intraplate). The point-source model uses hypocentral distance for `R`, not a modeled fault-plane distance. Stations whose predicted discrete intensity is JMA 0 remain inactive in the simulation display.
+`S(D) = 0.0038 D` through 80 km, then increases logarithmically to avoid unbounded extrapolation at greater depths. `C` is `0.00` for crustal, `-0.02` for interplate, or `+0.12` for intraplate events; absent an explicit fault type, source depth selects the fallback category (`<30 km` crustal, `30–<60 km` interplate, and `>=60 km` intraplate). `PGV600` is in cm/s. When coordinates and Slab2 data are available, the model also evaluates a material-specific direct-path loss and a competing guided-slab path. The legacy `rSlab` argument is not used by this calculation. Stations whose predicted discrete intensity is JMA 0 remain inactive in the simulation display.
 
 The `envelope` is zero before P arrival, ramps to about 15% of peak between P and S arrivals, rises quadratically to peak over 2.5 seconds after S arrival, then decays exponentially with `tau = 4 + 1.5 Mw` seconds. Surface PGV is converted to a continuous predicted intensity by `I = 2.68 + 1.72 log10(PGVsurface)` (with a low-value guard), then mapped to a discrete JMA label. This empirical PGV equivalent is not the official waveform-based instrumental-intensity computation in `intensity.ts`.
 
@@ -368,7 +372,7 @@ Versioned inventory used to find and preload the generated mesh PNG tiles. The m
 
 ### `public/data/station_density.csv`
 
-Browser-facing prepared density values loaded by `NoiseLoader` for the optional ambient display.
+Browser-facing prepared density values loaded by `NoiseLoader` for the optional ambient display. Ambient noise is suppressed below 10,000 people/km², and a density of 25,000 people/km² maps to intensity -1.5.
 
 ### `public/data/station_density.npz`
 
@@ -377,6 +381,10 @@ Prepared NumPy-format density data retained alongside the CSV output for prepara
 ### `public/data/prefectures.geojson` and `public/data/boundaries/`
 
 Browser-served geographic shapes used by mapping/report overlays. The GeoJSON is also available as a source input under `data_references/`.
+
+### `public/data/sub_regions.geojson`
+
+Simplified JMA forecast-area boundaries used for the colored region map and EEW intensity badges. Generate it from the supplied JMA shapefile with `python scripts/generate_geojson_from_shapefiles.py`; the full-resolution GeoJSON is retained under `data_references/`.
 
 ### `public/data/stations/`
 

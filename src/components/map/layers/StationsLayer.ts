@@ -56,7 +56,8 @@ export function createStationsLayer(props: StationLayerProps): ScatterplotLayer 
         let intensityVal = -3; // Default minimum intensity
         const ev = triggerEventsMap?.get(d);
         if (ev) {
-          intensityVal = ev.instrumentalIntensity ?? ev.continuousIntensity ?? -3;
+          const ambientIntensity = ambientNoiseLevels?.[d] ?? -3;
+          intensityVal = Math.max(ev.continuousIntensity ?? ev.instrumentalIntensity ?? -3, ambientIntensity);
         } else if (ambientNoiseLevels) {
           intensityVal = ambientNoiseLevels[d] ?? -3;
         } else if (stationBuffer.dailyNoise) {
