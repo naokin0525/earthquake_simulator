@@ -64,25 +64,29 @@ export const EEWHud: React.FC = () => {
             { id: 'eew', label: 'EEW (警報/予報)' },
             { id: 'flash', label: '震度速報' },
             { id: 'detail', label: '各地の震度' },
+            { id: 'estimated', label: '推計震度分布図' },
             { id: 'lpgm', label: '長周期地震動' },
             { id: 'off', label: '通常地図' },
           ].map((mode) => {
             const isSelected = mapDisplayMode === mode.id;
+            const isUnavailable = mode.id === 'estimated' && !earthquakeInfoReport;
             return (
               <button
                 key={mode.id}
                 type="button"
-                onClick={() => setMapDisplayMode(mode.id as any)}
+                onClick={() => setMapDisplayMode(mode.id as typeof mapDisplayMode)}
+                disabled={isUnavailable}
                 style={{
                   background: isSelected ? 'rgba(0, 242, 254, 0.25)' : 'rgba(255,255,255,0.05)',
                   border: `1px solid ${isSelected ? 'var(--accent-cyan)' : 'rgba(255,255,255,0.1)'}`,
-                  color: isSelected ? '#00f2fe' : '#cbd5e1',
+                  color: isUnavailable ? '#64748b' : isSelected ? '#00f2fe' : '#cbd5e1',
                   borderRadius: '4px',
                   fontSize: '10px',
                   padding: '4px 2px',
-                  cursor: 'pointer',
+                  cursor: isUnavailable ? 'not-allowed' : 'pointer',
                   fontWeight: isSelected ? 'bold' : 'normal'
                 }}
+                title={isUnavailable ? '震源・震度情報の発表後に表示できます' : undefined}
               >
                 {mode.label}
               </button>

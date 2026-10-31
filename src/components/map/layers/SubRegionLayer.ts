@@ -1,6 +1,6 @@
 import { IconLayer } from '@deck.gl/layers';
 import type { Feature, FeatureCollection, MultiPolygon, Polygon, Position } from 'geojson';
-import type { EEWReport, JmaIntensityScale } from '../../../core/types';
+import type { EarthquakeInfoReport, IntensityFlashReport, JmaIntensityScale } from '../../../core/types';
 import { hexToRgba, JMA_INTENSITY_LEVELS } from '../../../core/ui/intensityColors';
 
 type Point = [number, number];
@@ -83,91 +83,55 @@ export function getRegionMidpoint(geometry: AreaGeometry): Point | null {
   ];
 }
 
-function pointInRing(point: Point, ring: LinearRing): boolean {
-  const [x, y] = point;
-  let inside = false;
-  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
-    const [xi, yi] = ring[i];
-    const [xj, yj] = ring[j];
-    const crosses = (yi > y) !== (yj > y) &&
-      x < ((xj - xi) * (y - yi)) / (yj - yi) + xi;
-    if (crosses) inside = !inside;
-  }
-  return inside;
-}
-
-function pointInGeometry(point: Point, geometry: AreaGeometry): boolean {
-  const polygons = geometry.type === 'Polygon'
-    ? [geometry.coordinates as PolygonCoordinates]
-    : geometry.coordinates as PolygonCoordinates[];
-
-  return polygons.some((rings) =>
-    pointInRing(point, rings[0] ?? []) &&
-    !rings.slice(1).some((hole) => pointInRing(point, hole))
-  );
-}
-
-function findPrefectureCode(
-  region: AreaFeature,
-  prefectures: AreaFeatureCollection
-): number | undefined {
-  const declaredPrefecture = region.properties.pref;
-  if (typeof declaredPrefecture === 'number' && Number.isFinite(declaredPrefecture)) {
-    return declaredPrefecture;
-  }
-
-  const candidateCenters = getPolygonCentroids(region.geometry);
-  for (const candidate of candidateCenters) {
-    const prefecture = prefectures.features.find((feature) => pointInGeometry(candidate.position, feature.geometry));
-    const code = prefecture?.properties.pref;
-    if (typeof code === 'number' && Number.isFinite(code)) return code;
-  }
-
-  const midpoint = getRegionMidpoint(region.geometry);
-  if (!midpoint) return undefined;
-  const prefecture = prefectures.features.find((feature) => pointInGeometry(midpoint, feature.geometry));
-  const code = prefecture?.properties.pref;
-  return typeof code === 'number' && Number.isFinite(code) ? code : undefined;
-}
-
-export function assignRegionPrefectureCodes(
-  regions: AreaFeatureCollection,
-  prefectures: AreaFeatureCollection
-): AreaFeatureCollection {
-  return {
-    ...regions,
-    features: regions.features.map((feature) => {
-      const pref = findPrefectureCode(feature, prefectures);
-      if (pref === undefined) {
-        throw new Error(`Could not map JMA sub-region ${String(feature.properties.code)} to a prefecture`);
-      }
-      return { ...feature, properties: { ...feature.properties, pref } };
-    })
-  };
-}
-
 export interface RegionIntensityMarker {
   position: Point;
   intensity: JmaIntensityScale;
 }
 
+export type RegionalIntensityReport = Pick<IntensityFlashReport | EarthquakeInfoReport, 'prefectures'>;
+
+export function shouldShowRegionIntensityIcons(
+  mode: string,
+  isZoomedIn: boolean
+): boolean {
+  return mode === 'flash' || (mode === 'detail' && !isZoomedIn);
+}
+
+export function getRegionIntensityMap(
+  report: RegionalIntensityReport | null
+): Map<string, JmaIntensityScale> {
+  return new Map(report?.prefectures.map((entry) => [entry.prefName, entry.maxIntensity]) ?? []);
+}
+
 export function getRegionIntensityMarkers(
   regions: AreaFeatureCollection,
-  report: EEWReport | null
+  report: RegionalIntensityReport | null
 ): RegionIntensityMarker[] {
   if (!report) return [];
 
-  const forecastByPrefecture = new Map(
-    report.warnedPrefectures
-      .filter((warning) => warning.isForecast || warning.isWarning)
-      .map((warning) => [warning.prefCode, warning.maxPredictedIntensity])
-  );
-
-  return regions.features.flatMap((feature) => {
-    const intensity = forecastByPrefecture.get(feature.properties.pref ?? -1);
-    const position = getRegionMidpoint(feature.geometry);
-    return intensity && position ? [{ position, intensity }] : [];
+  return report.prefectures.flatMap((entry) => {
+    const feature = regions.features.find((candidate) =>
+      candidate.properties.name === entry.prefName
+    ) ?? (entry.prefCode > 0
+      ? regions.features
+        .filter((candidate) => candidate.properties.pref === entry.prefCode)
+        .sort((a, b) => {
+          const area = (geometry: AreaGeometry) =>
+            getPolygonCentroids(geometry).reduce((sum, polygon) => sum + polygon.area, 0);
+          return area(b.geometry) - area(a.geometry);
+        })[0]
+      : undefined);
+    const position = feature ? getRegionMidpoint(feature.geometry) : null;
+    return position ? [{ position, intensity: entry.maxIntensity }] : [];
   });
+}
+
+export function getReportedRegionIntensity(
+  feature: AreaFeature,
+  intensityByRegion: ReadonlyMap<string, JmaIntensityScale>
+): JmaIntensityScale | undefined {
+  const regionName = feature.properties.name;
+  return typeof regionName === 'string' ? intensityByRegion.get(regionName) : undefined;
 }
 
 function intensityLabel(intensity: JmaIntensityScale): string {
@@ -183,26 +147,48 @@ function intensityColor(intensity: JmaIntensityScale): [number, number, number, 
   return hexToRgba(colour, 245);
 }
 
-const intensityIconUrls = new Map<JmaIntensityScale, string>();
+export function getIntensityBorderColor(intensity: JmaIntensityScale): string {
+  const [red, green, blue] = intensityColor(intensity);
+  const brightness = 0.299 * red + 0.587 * green + 0.114 * blue;
+  const isBright = brightness >= 127.5;
+  const adjustedBrightness = isBright
+    ? brightness * 0.865
+    : brightness + (255 - brightness) * 0.135;
+  const saturationScale = isBright ? 1.2 : 0.8;
+  const adjustedChannels = [red, green, blue].map((channel) =>
+    Math.min(255, Math.max(0, Math.round(
+      adjustedBrightness + (channel - brightness) * saturationScale
+    )))
+  );
+  return `#${adjustedChannels
+    .map((channel) => channel.toString(16).padStart(2, '0'))
+    .join('')}`;
+}
 
-function getIntensityIcon(intensity: JmaIntensityScale) {
-  let url = intensityIconUrls.get(intensity);
-  if (!url) {
-    const [red, green, blue] = intensityColor(intensity);
-    const textColor = intensity === '0' || intensity === '1' || intensity === '2' || intensity === '3' || intensity === '4'
+const intensityIconUrls = new Map<JmaIntensityScale, string>(
+  JMA_INTENSITY_LEVELS.map(({ scale }) => {
+    const [red, green, blue] = intensityColor(scale);
+    const [r, g, b] = [red, green, blue];
+    const textColor = 0.299 * r + 0.587 * g + 0.114 * b >= 150
       ? '#141414'
       : '#ffffff';
-    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 40 40"><circle cx="20" cy="20" r="18" fill="rgb(${red},${green},${blue})" stroke="#ffffff" stroke-width="2"/><text x="20" y="20" text-anchor="middle" dominant-baseline="central" fill="${textColor}" font-family="sans-serif" font-size="12" font-weight="700">${intensityLabel(intensity)}</text></svg>`;
-    url = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
-    intensityIconUrls.set(intensity, url);
-  }
+    const borderColor = getIntensityBorderColor(scale);
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="62" height="62" viewBox="0 0 62 62" data-intensity-code="${scale}" aria-label="震度${intensityLabel(scale)}"><rect x="1" y="1" width="60" height="60" rx="10" fill="rgb(${red},${green},${blue})" stroke="${borderColor}" stroke-width="6"/><text x="31" y="28" font-size="35" font-family="sans-serif" text-anchor="middle" dominant-baseline="central" fill="${textColor}" stroke="${textColor}" stroke-width="1">${intensityLabel(scale)}</text></svg>`;
+    return [scale, `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`];
+  })
+);
 
-  return { url, width: 40, height: 40, anchorY: 20 };
+export function getIntensityIcon(intensity: JmaIntensityScale) {
+  const url = intensityIconUrls.get(intensity);
+  if (!url) {
+    throw new Error(`Missing intensity icon for JMA scale "${intensity}"`);
+  }
+  return { url, width: 62, height: 62, anchorY: 20 };
 }
 
 export function createRegionIntensityLayers(
   regions: AreaFeatureCollection | null,
-  report: EEWReport | null
+  report: RegionalIntensityReport | null
 ): IconLayer[] {
   if (!regions || !report) return [];
   const markers = getRegionIntensityMarkers(regions, report);
@@ -210,13 +196,15 @@ export function createRegionIntensityLayers(
 
   return [
     new IconLayer<RegionIntensityMarker>({
-      id: 'eew-region-intensity-badges',
+      id: 'flash-report-intensity-badges',
       data: markers,
       getPosition: (marker) => marker.position,
       getIcon: (marker) => getIntensityIcon(marker.intensity),
       getColor: [255, 255, 255, 255],
       getSize: 24,
       sizeUnits: 'pixels',
+      sizeMinPixels: 18,
+      sizeMaxPixels: 32,
       pickable: false,
     })
   ];

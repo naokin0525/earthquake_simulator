@@ -77,12 +77,12 @@ export class EventSequencer {
   private maxIntensityByPrefecture = new Map<number, JmaIntensityScale>();
   private maxIntensityByRegion = new Map<string, JmaIntensityScale>();
   private isWarningIssued = false;
-  private isFlashReportIssued = false;
+  private flashReportCount = 0;
+  private lastFlashReportTime: number | null = null;
   private isEarthquakeInfoIssued = false;
   private isLpgmReportIssued = false;
   private isFinalReportIssued = false;
   private isUsingSubRegionBreakdown = false;
-  private lastFlashReport: { issuedTime: number; maxIntensity: JmaIntensityScale; regionNames: Set<string> } | null = null;
 
   public reset(): void {
     this.milestones.clear();
@@ -90,12 +90,12 @@ export class EventSequencer {
     this.maxIntensityByPrefecture.clear();
     this.maxIntensityByRegion.clear();
     this.isWarningIssued = false;
-    this.isFlashReportIssued = false;
+    this.flashReportCount = 0;
+    this.lastFlashReportTime = null;
     this.isEarthquakeInfoIssued = false;
     this.isLpgmReportIssued = false;
     this.isFinalReportIssued = false;
     this.isUsingSubRegionBreakdown = false;
-    this.lastFlashReport = null;
   }
 
   /**
@@ -141,17 +141,17 @@ export class EventSequencer {
       };
     }
 
-    // 5. 震度速報: issue around 90 seconds for observed intensity 3+ and allow follow-up reports
-    // when the intensity increases or new affected regions are confirmed.
-    if (simTime >= 90.0 && this.hasObservedIntensityAtLeast('3')) {
+    // Issue the initial bulletin at T+90, then publish completed observations once per minute.
+    if (
+      this.flashReportCount < 6 &&
+      simTime >= 90.0 &&
+      (this.lastFlashReportTime === null || simTime - this.lastFlashReportTime >= 60) &&
+      this.hasObservedIntensityAtLeast('3')
+    ) {
       const report = this.generateFlashReport(simTime);
-      if (report && this.shouldIssueFlashReport(report, simTime)) {
-        this.isFlashReportIssued = true;
-        this.lastFlashReport = {
-          issuedTime: simTime,
-          maxIntensity: report.maxIntensity,
-          regionNames: new Set(report.prefectures.map((p) => p.prefName))
-        };
+      if (report) {
+        this.flashReportCount += 1;
+        this.lastFlashReportTime = simTime;
         this.emitMilestone('FLASH_REPORT', simTime, '震度速報 (約1分半後)');
         return {
           event: { type: 'FLASH_REPORT', payload: report },
@@ -213,19 +213,6 @@ export class EventSequencer {
     return [...regionalValues, ...prefecturalValues].some((intensity) =>
       isJmaGreaterOrEqual(intensity, threshold)
     );
-  }
-
-  private shouldIssueFlashReport(report: IntensityFlashReport, simTime: number): boolean {
-    if (!this.lastFlashReport) {
-      return true;
-    }
-
-    const previousRegions = this.lastFlashReport.regionNames;
-    const regionAdded = report.prefectures.some((entry) => !previousRegions.has(entry.prefName));
-    const intensityAdded = report.maxIntensity !== this.lastFlashReport.maxIntensity &&
-      isJmaGreaterOrEqual(report.maxIntensity, this.lastFlashReport.maxIntensity);
-
-    return regionAdded || intensityAdded;
   }
 
   private emitMilestone(type: SimulationMilestoneType, time: number, label: string): { milestone: SimulationMilestone } {

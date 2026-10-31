@@ -17,7 +17,6 @@ REFERENCE_GEOJSON = (
 )
 PUBLIC_GEOJSON = ROOT / "public" / "data" / "sub_regions.geojson"
 PREFECTURES_GEOJSON = ROOT / "public" / "data" / "prefectures.geojson"
-SIMPLIFICATION_TOLERANCE_DEGREES = 0.005
 
 print("Reading JMA Shapefile...")
 gdf = gpd.read_file(INPUT_SHAPEFILE, encoding="utf-8")
@@ -31,12 +30,8 @@ print(f"Writing full reference GeoJSON to {REFERENCE_GEOJSON}...")
 REFERENCE_GEOJSON.parent.mkdir(parents=True, exist_ok=True)
 gdf.to_file(REFERENCE_GEOJSON, driver="GeoJSON")
 
-print("Simplifying boundaries for the browser map...")
 runtime_gdf = gdf.copy()
-runtime_gdf.geometry = runtime_gdf.geometry.simplify(
-    SIMPLIFICATION_TOLERANCE_DEGREES,
-    preserve_topology=True,
-)
+
 prefectures = gpd.read_file(PREFECTURES_GEOJSON, encoding="utf-8").to_crs(epsg=4326)
 prefecture_codes = []
 for geometry in runtime_gdf.geometry:

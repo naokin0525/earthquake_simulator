@@ -1,10 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
   createMeshIntensityLayer,
+  MESH_INTENSITY_SHADER_DECLARATIONS,
   MESH_INTENSITY_FILTER_COLOR,
-  MESH_INTENSITY_SHADER_DECLARATIONS
 } from '../../src/components/map/layers/MeshIntensityLayer';
 import { calculateEquivalentRuptureRadiusKm } from '../../src/core/physics/finiteSource';
+import { JMA_INTENSITY_LEVELS } from '../../src/core/ui/intensityColors';
 
 describe('mesh intensity layer attenuation', () => {
   it('uses each tile pixel coordinate and source coordinates for attenuation', () => {
@@ -35,11 +36,24 @@ describe('mesh intensity layer attenuation', () => {
     expect(subLayer.props).toMatchObject({
       hypoCoords: [35.5, 139.5],
       tileBounds: [138, 34, 140, 36],
-      ruptureRadiusKm: calculateEquivalentRuptureRadiusKm(6.5)
+      ruptureRadiusKm: calculateEquivalentRuptureRadiusKm(6.5),
+      textureParameters: {
+        minFilter: 'nearest',
+        magFilter: 'nearest'
+      }
     });
     expect(MESH_INTENSITY_FILTER_COLOR).toContain('geometry.uv');
     expect(MESH_INTENSITY_FILTER_COLOR).toContain('getEpicentralDistanceKm(siteLat, siteLon)');
     expect(MESH_INTENSITY_FILTER_COLOR).toContain('effectiveEpicentralDistanceKm');
+    expect(MESH_INTENSITY_FILTER_COLOR).toContain('float bedrockPgv');
+    expect(MESH_INTENSITY_FILTER_COLOR).toContain('max(0.5, arv)');
+    expect(MESH_INTENSITY_FILTER_COLOR).toContain('meshIntensity.faultTypeOffset');
     expect(MESH_INTENSITY_SHADER_DECLARATIONS).toContain('meshIntensity.hypoCoords');
+    for (const { scale, colour } of JMA_INTENSITY_LEVELS.slice(1)) {
+      const rgb = colour.slice(1).match(/.{2}/g)!.map((channel) =>
+        (Number.parseInt(channel, 16) / 255).toFixed(6)
+      );
+      expect(MESH_INTENSITY_SHADER_DECLARATIONS).toContain(`vec4(${rgb.join(', ')},`);
+    }
   });
 });

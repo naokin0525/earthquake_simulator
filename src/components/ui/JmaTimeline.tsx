@@ -37,7 +37,8 @@ export const JmaTimeline: React.FC = () => {
     sCount > 0, // 4: S-wave arrival
     !!flashReport, // 5: Intensity flash report (approx. 1-2 min)
     !!earthquakeInfoReport, // 6: Detailed earthquake info (approx. 3-5 min)
-    !!lpgmReport, // 7: Long-period ground motion (approx. 10 min)
+    !!earthquakeInfoReport, // 7: Estimated seismic intensity distribution map
+    !!lpgmReport, // 8: Long-period ground motion (approx. 10 min)
   ];
 
   // Find the latest active step index – used for styling.
@@ -46,7 +47,7 @@ export const JmaTimeline: React.FC = () => {
     if (active) currentActiveIdx = i;
   });
 
-  const stepMeta: { label: string; mode?: 'eew' | 'flash' | 'detail' | 'lpgm' }[] = [
+  const stepMeta: { label: string; mode?: 'eew' | 'flash' | 'detail' | 'estimated' | 'lpgm' }[] = [
     { label: '1. 地震発生 (T+0s)' },
     { label: '2. 揺れの検知 (P波初検知)' },
     { label: '3. 緊急地震速報 (予報) [数秒〜]', mode: 'eew' },
@@ -54,7 +55,8 @@ export const JmaTimeline: React.FC = () => {
     { label: '5. 主要動到達 (S波到達)' },
     { label: '6. 震度速報 [約1~2分後]', mode: 'flash' },
     { label: '7. 震源・震度情報 [約3~5分後]', mode: 'detail' },
-    { label: '8. 長周期地震動観測情報 [約10分後]', mode: 'lpgm' },
+    { label: '8. 推計震度分布図の作成', mode: 'estimated' },
+    { label: '9. 長周期地震動観測情報 [約10分後]', mode: 'lpgm' },
   ];
 
   return (

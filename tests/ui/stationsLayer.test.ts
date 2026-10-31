@@ -10,6 +10,23 @@ import {
 import { StationState, type StationDataBuffer } from '../../src/core/types';
 
 describe('ambient station noise colors', () => {
+  it('keeps station icons within readable pixel size limits', () => {
+    const stationBuffer: StationDataBuffer = {
+      totalStations: 1,
+      lats: new Float32Array([35]),
+      lons: new Float32Array([139]),
+      ampFactors: new Float32Array([1]),
+      prefCodes: new Uint8Array([13])
+    };
+    const layer = createStationsLayer({
+      stationBuffer,
+      stationStates: new Uint8Array([StationState.IDLE])
+    });
+
+    expect(layer.props.radiusMinPixels).toBe(2);
+    expect(layer.props.radiusMaxPixels).toBe(8);
+  });
+
   it('maps 25,000 people/km² to about -1.5 and suppresses low-density noise', () => {
     expect(populationDensityToAmbientIntensity(0)).toBe(-3);
     expect(populationDensityToAmbientIntensity(AMBIENT_NOISE_MIN_DENSITY - 1)).toBe(-3);

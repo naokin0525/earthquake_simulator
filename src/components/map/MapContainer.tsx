@@ -17,8 +17,10 @@ import { createHypocenterLayers } from './layers/HypocenterLayer';
 import { createMeshIntensityLayer } from './layers/MeshIntensityLayer';
 import { createGroundAmplificationLayer } from './layers/GroundAmplificationLayer';
 import {
-  assignRegionPrefectureCodes,
   createRegionIntensityLayers,
+  getRegionIntensityMap,
+  getReportedRegionIntensity,
+  shouldShowRegionIntensityIcons,
   type AreaFeatureCollection
 } from './layers/SubRegionLayer';
 import { StationLoader } from '../../loaders/StationLoader';
@@ -33,11 +35,12 @@ const INITIAL_VIEW_STATE = {
   pitch: 0,
   bearing: 0
 };
+const REGION_INTENSITY_ZOOM_THRESHOLD = 7;
 
 const INTENSITY_FILL_COLORS: Record<string, [number, number, number, number]> = Object.fromEntries(
   JMA_INTENSITY_LEVELS.map(({ scale, colour }) => [
     scale,
-    hexToRgba(colour, scale === '0' ? 230 : scale === '1' ? 160 : scale === '2' ? 180 : 220)
+    hexToRgba(colour, scale === '0' ? 70 : 85)
   ])
 );
 
@@ -56,6 +59,7 @@ export const MapContainer: React.FC = () => {
   const [selectedStationIndex, setSelectedStationIndex] = useState<number | null>(null);
   const [slabDepthAreas, setSlabDepthAreas] = useState<SlabDepthArea[]>([]);
   const [subRegions, setSubRegions] = useState<AreaFeatureCollection | null>(null);
+  const [isRegionalIntensityZoomedIn, setIsRegionalIntensityZoomedIn] = useState(false);
 
   const {
     stationBuffer,
@@ -146,23 +150,13 @@ export const MapContainer: React.FC = () => {
   useEffect(() => {
     let cancelled = false;
     const loadSubRegions = async () => {
-      const [regionsResponse, prefecturesResponse] = await Promise.all([
-        fetch('/data/sub_regions.geojson'),
-        fetch('/data/prefectures.geojson')
-      ]);
+      const regionsResponse = await fetch('/data/sub_regions.geojson');
       if (!regionsResponse.ok) {
         throw new Error(`Failed to load JMA sub-regions: ${regionsResponse.status} ${regionsResponse.statusText}`);
       }
-      if (!prefecturesResponse.ok) {
-        throw new Error(`Failed to load prefecture boundaries: ${prefecturesResponse.status} ${prefecturesResponse.statusText}`);
-      }
 
-      const [regions, prefectures] = await Promise.all([
-        regionsResponse.json() as Promise<AreaFeatureCollection>,
-        prefecturesResponse.json() as Promise<AreaFeatureCollection>
-      ]);
-      const regionsWithPrefectures = assignRegionPrefectureCodes(regions, prefectures);
-      if (!cancelled) setSubRegions(regionsWithPrefectures);
+      const regions = await regionsResponse.json() as AreaFeatureCollection;
+      if (!cancelled) setSubRegions(regions);
     };
 
     loadSubRegions().catch((error: unknown) => {
@@ -196,7 +190,7 @@ export const MapContainer: React.FC = () => {
       if (lpgmReport && lpgmReport.affectedPrefectures.length > 0) {
         effectiveMode = 'lpgm';
       } else if (earthquakeInfoReport) {
-        effectiveMode = 'detail';
+        effectiveMode = 'estimated';
       } else if (flashReport) {
         effectiveMode = 'flash';
       } else if (eewReport) {
@@ -214,19 +208,13 @@ export const MapContainer: React.FC = () => {
       }
     }
 
-    const flashMap = new Map<number, string>();
-    if (flashReport) {
-      for (const p of flashReport.prefectures) {
-        flashMap.set(p.prefCode, p.maxIntensity);
-      }
-    }
-
-    const detailMap = new Map<number, string>();
-    if (earthquakeInfoReport) {
-      for (const p of earthquakeInfoReport.prefectures) {
-        detailMap.set(p.prefCode, p.maxIntensity);
-      }
-    }
+    const flashRegionMap = getRegionIntensityMap(flashReport);
+    const detailRegionMap = getRegionIntensityMap(earthquakeInfoReport);
+    const activeRegionIntensityMap = effectiveMode === 'flash'
+      ? flashRegionMap
+      : effectiveMode === 'detail'
+        ? detailRegionMap
+        : new Map();
 
     const lpgmMap = new Map<number, number>();
     if (lpgmReport) {
@@ -243,10 +231,11 @@ export const MapContainer: React.FC = () => {
         filled: true,
         pickable: true,
         autoHighlight: true,
+        lineJointRounded: true,
+        lineCapRounded: true,
         highlightColor: [255, 255, 255, 45],
         getFillColor: (feature: any) => {
           const prefCode = feature.properties?.pref;
-          if (!prefCode) return [44, 51, 41, 255];
 
           if (effectiveMode === 'eew') {
             const w = eewMap.get(prefCode);
@@ -261,7 +250,7 @@ export const MapContainer: React.FC = () => {
           }
 
           if (effectiveMode === 'flash') {
-            const scale = flashMap.get(prefCode);
+            const scale = getReportedRegionIntensity(feature, activeRegionIntensityMap);
             if (scale) {
               return INTENSITY_FILL_COLORS[scale] ?? [35, 42, 35, 240];
             }
@@ -269,7 +258,7 @@ export const MapContainer: React.FC = () => {
           }
 
           if (effectiveMode === 'detail') {
-            const scale = detailMap.get(prefCode);
+            const scale = getReportedRegionIntensity(feature, activeRegionIntensityMap);
             if (scale) {
               return INTENSITY_FILL_COLORS[scale] ?? [35, 42, 35, 240];
             }
@@ -296,12 +285,12 @@ export const MapContainer: React.FC = () => {
             return [100, 116, 139, 120];
           }
           if (effectiveMode === 'flash') {
-            const scale = flashMap.get(prefCode);
+            const scale = getReportedRegionIntensity(feature, activeRegionIntensityMap);
             if (scale) return [255, 255, 255, 240];
             return [100, 116, 139, 120];
           }
           if (effectiveMode === 'detail') {
-            const scale = detailMap.get(prefCode);
+            const scale = getReportedRegionIntensity(feature, activeRegionIntensityMap);
             if (scale) return [255, 255, 255, 240];
             return [100, 116, 139, 120];
           }
@@ -318,9 +307,15 @@ export const MapContainer: React.FC = () => {
             const w = eewMap.get(prefCode);
             if (w?.isWarning) return 2.5;
             if (w?.isForecast) return 1.8;
-          } else if (effectiveMode === 'flash' && flashMap.has(prefCode)) {
+          } else if (
+            effectiveMode === 'flash' &&
+            getReportedRegionIntensity(feature, activeRegionIntensityMap)
+          ) {
             return 2.0;
-          } else if (effectiveMode === 'detail' && detailMap.has(prefCode)) {
+          } else if (
+            effectiveMode === 'detail' &&
+            getReportedRegionIntensity(feature, activeRegionIntensityMap)
+          ) {
             return 1.8;
           } else if (effectiveMode === 'lpgm' && lpgmMap.has(prefCode)) {
             return 2.0;
@@ -375,14 +370,14 @@ export const MapContainer: React.FC = () => {
     }
 
     // Layer 1: Custom WebGL 250m Mesh Intensity Shader Layer (if toggled)
-    if (isMeshVisible) {
+    if (isMeshVisible || (effectiveMode === 'estimated' && !!earthquakeInfoReport)) {
       layers.push(
         createMeshIntensityLayer({
           hypoLat: hypocenter.lat,
           hypoLon: hypocenter.lon,
           depthKm: hypocenter.depth,
           magnitude: hypocenter.magnitude,
-          visible: isMeshVisible
+          visible: true
         })
       );
     }
@@ -418,7 +413,18 @@ export const MapContainer: React.FC = () => {
       eewReport
     });
     layers.push(...hypoLayers);
-    layers.push(...createRegionIntensityLayers(subRegions, eewReport));
+    const regionalReport = mapDisplayMode === 'flash'
+      ? flashReport
+      : mapDisplayMode === 'detail'
+        ? earthquakeInfoReport
+        : null;
+    const showRegionalIntensityIcons = shouldShowRegionIntensityIcons(
+      mapDisplayMode,
+      isRegionalIntensityZoomedIn
+    );
+    if (showRegionalIntensityIcons) {
+      layers.push(...createRegionIntensityLayers(subRegions, regionalReport));
+    }
 
     return layers;
   }, [
@@ -442,7 +448,8 @@ export const MapContainer: React.FC = () => {
     isArvVisible,
     mapVersion,
     hasEpicenter,
-    slabAreaCanvases
+    slabAreaCanvases,
+    isRegionalIntensityZoomedIn
   ]);
 
   return (
@@ -454,8 +461,14 @@ export const MapContainer: React.FC = () => {
       <DeckGL
         initialViewState={INITIAL_VIEW_STATE}
         controller={true}
+        useDevicePixels={true}
         layers={deckLayers}
         style={{ position: 'absolute', top: '0px', left: '0px', width: '100%', height: '100%' }}
+        onViewStateChange={({ viewState }) => {
+          if ('zoom' in viewState) {
+            setIsRegionalIntensityZoomedIn(viewState.zoom >= REGION_INTENSITY_ZOOM_THRESHOLD);
+          }
+        }}
         onClick={(info) => {
           if (info.layer?.id === 'stations-layer' && typeof info.object === 'number') {
             setSelectedStationIndex(info.object);

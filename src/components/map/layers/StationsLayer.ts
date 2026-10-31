@@ -103,6 +103,8 @@ export function createStationsLayer(props: StationLayerProps): ScatterplotLayer 
       const state = stationStates[d] ?? StationState.IDLE;
       return state === StationState.IDLE ? 0 : 1;
     },
+    radiusMinPixels: 2,
+    radiusMaxPixels: 8,
     stroked: true,
     filled: true,
     pickable: true,

@@ -33,6 +33,8 @@ export function createHypocenterLayers(props: HypocenterLayerProps) {
         sizeScale: 1,
         sizeUnits: 'pixels',
         getSize: 32,
+        sizeMinPixels: 24,
+        sizeMaxPixels: 40,
         pickable: false
       })
     );

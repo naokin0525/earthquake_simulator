@@ -9,6 +9,7 @@ import { TileLayer } from '@deck.gl/geo-layers';
 import { BitmapLayer } from '@deck.gl/layers';
 import type { ShaderModule } from '@luma.gl/shadertools';
 import { calculateEquivalentRuptureRadiusKm } from '../../../core/physics/finiteSource';
+import { JMA_INTENSITY_LEVELS, hexToRgba } from '../../../core/ui/intensityColors';
 
 export interface MeshIntensityLayerProps {
   id?: string;
@@ -20,18 +21,25 @@ export interface MeshIntensityLayerProps {
   visible?: boolean;
 }
 
+function shaderColor(scale: string, alpha: number): string {
+  const colour = JMA_INTENSITY_LEVELS.find((level) => level.scale === scale)?.colour;
+  if (!colour) throw new Error(`Missing color for JMA intensity "${scale}"`);
+  const [red, green, blue] = hexToRgba(colour);
+  return `vec4(${(red / 255).toFixed(6)}, ${(green / 255).toFixed(6)}, ${(blue / 255).toFixed(6)}, ${alpha.toFixed(2)})`;
+}
+
 export const MESH_INTENSITY_SHADER_DECLARATIONS = `
 vec4 getJmaColor(float continuousI) {
   if (continuousI < 0.5) discard;
-  if (continuousI < 1.5) return vec4(0.29, 0.59, 0.84, 0.60); // 1
-  if (continuousI < 2.5) return vec4(0.06, 0.31, 0.62, 0.75); // 2
-  if (continuousI < 3.5) return vec4(0.12, 0.51, 0.30, 0.80); // 3
-  if (continuousI < 4.5) return vec4(0.95, 0.77, 0.06, 0.85); // 4
-  if (continuousI < 5.0) return vec4(0.95, 0.61, 0.07, 0.90); // 5-
-  if (continuousI < 5.5) return vec4(0.90, 0.49, 0.13, 0.90); // 5+
-  if (continuousI < 6.0) return vec4(0.91, 0.30, 0.24, 0.95); // 6-
-  if (continuousI < 6.5) return vec4(0.75, 0.22, 0.17, 0.95); // 6+
-  return vec4(0.56, 0.27, 0.68, 1.00);                       // 7
+  if (continuousI < 1.5) return ${shaderColor('1', 0.70)};
+  if (continuousI < 2.5) return ${shaderColor('2', 0.75)};
+  if (continuousI < 3.5) return ${shaderColor('3', 0.80)};
+  if (continuousI < 4.5) return ${shaderColor('4', 0.85)};
+  if (continuousI < 5.0) return ${shaderColor('5-', 0.90)};
+  if (continuousI < 5.5) return ${shaderColor('5+', 0.90)};
+  if (continuousI < 6.0) return ${shaderColor('6-', 0.95)};
+  if (continuousI < 6.5) return ${shaderColor('6+', 0.95)};
+  return ${shaderColor('7', 1.00)};
 }
 
 float getEpicentralDistanceKm(float siteLat, float siteLon) {
@@ -64,11 +72,14 @@ float R = max(length(vec2(effectiveEpicentralDistanceKm, meshIntensity.depthKm))
 
 float arv = 0.5 + (color.r * 2.5);
 float saturationTerm = 0.0028 * pow(10.0, 0.50 * meshIntensity.magnitude);
-float log10Pgv600 = 0.58 * meshIntensity.magnitude + 0.0038 * meshIntensity.depthKm - 1.29
-  - log2(R + saturationTerm) * 0.301 - 0.002 * R;
+float depthTerm = meshIntensity.depthKm <= 80.0
+  ? 0.0038 * meshIntensity.depthKm
+  : 0.304 + 0.304 * log(1.0 + (meshIntensity.depthKm - 80.0) / 80.0);
+float log10Pgv600 = 0.58 * meshIntensity.magnitude + depthTerm + meshIntensity.faultTypeOffset - 1.29
+  - log2(R + saturationTerm) * 0.30103 - 0.002 * R;
 float bedrockPgv = pow(10.0, log10Pgv600);
-float surfacePgv = bedrockPgv * max(0.1, arv);
-float intensity = 2.68 + 1.72 * (log2(max(1e-4, surfacePgv)) * 0.301);
+float surfacePgv = bedrockPgv * max(0.5, arv);
+float intensity = 2.68 + 1.72 * (log2(max(1e-6, surfacePgv)) * 0.30103);
 
 color = getJmaColor(intensity);
 `;
@@ -77,6 +88,7 @@ type MeshIntensityUniforms = {
   hypoCoords: [number, number];
   depthKm: number;
   magnitude: number;
+  faultTypeOffset: number;
   ruptureRadiusKm: number;
   tileBounds: [number, number, number, number];
 };
@@ -88,6 +100,7 @@ struct MeshIntensityUniforms {
   hypoCoords: vec2<f32>,
   depthKm: f32,
   magnitude: f32,
+  faultTypeOffset: f32,
   ruptureRadiusKm: f32,
   tileBounds: vec4<f32>,
 };
@@ -98,6 +111,7 @@ layout(std140) uniform meshIntensityUniforms {
   vec2 hypoCoords;
   float depthKm;
   float magnitude;
+  float faultTypeOffset;
   float ruptureRadiusKm;
   vec4 tileBounds;
 } meshIntensity;
@@ -107,6 +121,7 @@ layout(std140) uniform meshIntensityUniforms {
   vec2 hypoCoords;
   float depthKm;
   float magnitude;
+  float faultTypeOffset;
   float ruptureRadiusKm;
   vec4 tileBounds;
 } meshIntensity;
@@ -115,6 +130,7 @@ layout(std140) uniform meshIntensityUniforms {
     hypoCoords: 'vec2<f32>',
     depthKm: 'f32',
     magnitude: 'f32',
+    faultTypeOffset: 'f32',
     ruptureRadiusKm: 'f32',
     tileBounds: 'vec4<f32>'
   }
@@ -137,12 +153,20 @@ class MeshIntensityBitmapLayer extends BitmapLayer<MeshIntensityBitmapProps> {
   }
 
   draw(params: Parameters<BitmapLayer['draw']>[0]) {
-    const { hypoCoords, depthKm, magnitude, ruptureRadiusKm, tileBounds } = this.props;
+    const {
+      hypoCoords,
+      depthKm,
+      magnitude,
+      faultTypeOffset,
+      ruptureRadiusKm,
+      tileBounds
+    } = this.props;
     this.state.model!.shaderInputs.setProps({
       meshIntensity: {
         hypoCoords,
         depthKm,
         magnitude,
+        faultTypeOffset,
         ruptureRadiusKm,
         tileBounds
       }
@@ -161,6 +185,7 @@ export function createMeshIntensityLayer(props: MeshIntensityLayerProps): TileLa
     tileUrl = '/tiles/mesh/{z}/{x}/{y}.png',
     id = 'mesh-intensity-layer'
   } = props;
+  const faultTypeOffset = depthKm >= 60 ? 0.12 : depthKm >= 30 ? -0.02 : 0;
   const ruptureRadiusKm = calculateEquivalentRuptureRadiusKm(magnitude);
 
   return new TileLayer({
@@ -183,9 +208,14 @@ export function createMeshIntensityLayer(props: MeshIntensityLayerProps): TileLa
         opacity: subProps.opacity,
         pickable: subProps.pickable,
         parameters: subProps.parameters,
+        textureParameters: {
+          minFilter: 'nearest',
+          magFilter: 'nearest'
+        },
         hypoCoords: [hypoLat, hypoLon],
         depthKm,
         magnitude,
+        faultTypeOffset,
         ruptureRadiusKm,
         tileBounds: [west, south, east, north]
       });

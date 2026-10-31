@@ -32,7 +32,7 @@ import { preloadMeshTiles, type MeshTileLoadProgress } from '../loaders/MeshTile
 import { loadDailyNoise } from '../loaders/NoiseLoader';
 import { audioAlertSystem } from '../utils/audioAlert';
 
-export type MapDisplayMode = 'auto' | 'eew' | 'flash' | 'detail' | 'lpgm' | 'off';
+export type MapDisplayMode = 'auto' | 'eew' | 'flash' | 'detail' | 'estimated' | 'lpgm' | 'off';
 export type StartupPhase = 'tiles' | 'stations' | 'worker';
 
 interface SimulationContextValue {
@@ -111,7 +111,7 @@ export const SimulationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   const [lpgmReport, setLpgmReport] = useState<LPGMReport | null>(null);
   const [milestones, setMilestones] = useState<SimulationMilestone[]>([]);
   const [isMeshVisible, setIsMeshVisible] = useState(false);
-  const [isFaultVisible, setIsFaultVisible] = useState(true);
+  const [isFaultVisible, setIsFaultVisible] = useState(false);
   const [isArvVisible, setIsArvVisible] = useState(false);
   const [isKyoshinMonitor, setIsKyoshinMonitor] = useState(false);
   const [ambientNoiseLevels, setAmbientNoiseLevels] = useState<Float32Array | null>(null);
@@ -409,7 +409,6 @@ export const SimulationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   }, []);
 
   const resetSimulation = useCallback((config?: ReturnType<typeof createSimulationConfig>) => {
-    if (!hasEpicenter) return;
     postWorkerAction(config ? { type: 'RESET', payload: config } : { type: 'RESET' });
     setIsPlaying(false);
     setSimTime(0.0);
@@ -421,7 +420,7 @@ export const SimulationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     }
     triggerEventsMapRef.current.clear();
     setMapVersion((version) => version + 1);
-  }, [clearReportState, stationBuffer, hasEpicenter]);
+  }, [clearReportState, stationBuffer]);
 
   const reset = useCallback(() => {
     resetSimulation();
@@ -455,10 +454,8 @@ export const SimulationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     const updated = { ...hypocenter, lat, lon };
     setHypocenterState(updated);
     setHasEpicenter(true);
-    if (isPlaying || simTime > 0) {
-      resetSimulation(createSimulationConfig(updated, timeScale));
-    }
-  }, [hypocenter, isPlaying, simTime, timeScale, resetSimulation]);
+    resetSimulation(createSimulationConfig(updated, timeScale));
+  }, [hypocenter, timeScale, resetSimulation]);
 
   const setDepth = useCallback((depthKm: number) => {
     const updated = { ...hypocenter, depth: depthKm };

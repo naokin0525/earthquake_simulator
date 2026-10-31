@@ -56,7 +56,7 @@ describe('EventSequencer reports', () => {
     expect(report?.summary).toContain('2都道府県');
   });
 
-  it('issues a follow-up flash report when observed intensity rises after the first report', () => {
+  it('publishes flash reports at one-minute intervals, not when new observations arrive', () => {
     const sequencer = new EventSequencer();
     const prefCodes = new Uint8Array(2).fill(13);
     const initial = [
@@ -69,10 +69,25 @@ describe('EventSequencer reports', () => {
       stationTrigger(0, StationState.S_ARRIVED, '5-'),
       stationTrigger(1, StationState.S_ARRIVED, '5-')
     ];
-    const result = sequencer.update(100, 2, null, hypocenter, followUp, prefCodes);
+    const earlyUpdate = sequencer.update(100, 2, null, hypocenter, followUp, prefCodes);
+    const result = sequencer.update(150, 2, null, hypocenter, [], prefCodes);
 
+    expect(earlyUpdate.event).toBeUndefined();
     expect(result.event?.type).toBe('FLASH_REPORT');
     expect(result.event?.type === 'FLASH_REPORT' ? result.event.payload.maxIntensity : null).toBe('5-');
+  });
+
+  it('caps the number of flash reports at six', () => {
+    const sequencer = new EventSequencer();
+    const prefCodes = new Uint8Array([13]);
+    const trigger = [stationTrigger(0, StationState.S_ARRIVED, '3')];
+
+    sequencer.update(10, 1, null, hypocenter, trigger, prefCodes);
+    const reportTimes = [90, 150, 210, 270, 330, 390, 450].filter((time) =>
+      sequencer.update(time, 1, null, hypocenter, [], prefCodes).event?.type === 'FLASH_REPORT'
+    );
+
+    expect(reportTimes).toEqual([90, 150, 210, 270, 330, 390]);
   });
 
   it('does not issue an intensity report when observed shaking is below intensity 3', () => {
@@ -138,6 +153,9 @@ describe('EventSequencer reports', () => {
     // Flash report at ~90s
     const flashResult = sequencer.update(90, 1, null, hypocenter, [], prefCodes);
     expect(flashResult.event?.type).toBe('FLASH_REPORT');
+
+    // The next bulletin is scheduled for ~150s, not at every intermediate update.
+    sequencer.update(150, 1, null, hypocenter, [], prefCodes);
 
     // Earthquake info report at ~180s
     const result = sequencer.update(180, 1, null, hypocenter, [], prefCodes);
