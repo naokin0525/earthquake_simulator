@@ -37,3 +37,12 @@ export function hexToRgba(colour: string, alpha = 255): [number, number, number,
     alpha
   ];
 }
+
+export function getJmaIntensityColor(
+  scale: JmaIntensityScale,
+  alpha = 255
+): [number, number, number, number] {
+  const level = JMA_INTENSITY_LEVELS.find(({ scale: candidate }) => candidate === scale);
+  if (!level) throw new Error(`Missing color for JMA intensity "${scale}"`);
+  return hexToRgba(level.colour, alpha);
+}

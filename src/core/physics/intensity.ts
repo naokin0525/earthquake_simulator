@@ -242,6 +242,12 @@ export function isJmaGreaterOrEqual(scaleA: JmaIntensityScale, scaleB: JmaIntens
   return jmaScaleToNumeric(scaleA) >= jmaScaleToNumeric(scaleB);
 }
 
+export function shouldIssueEstimatedIntensityDistribution(
+  maxIntensity: JmaIntensityScale | null | undefined
+): boolean {
+  return !!maxIntensity && isJmaGreaterOrEqual(maxIntensity, '4');
+}
+
 /**
  * Formats a discrete JMA Intensity Scale into its standard Japanese display string (e.g., '震度5強').
  */

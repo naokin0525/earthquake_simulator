@@ -1,41 +1,36 @@
 import { describe, it, expect } from 'vitest';
 import {
-  calculateSurfaceWaveRadius,
   generateGeodesicCirclePaths,
   normalizeLongitude,
   WaveFrontLayer,
   createWaveFrontLayers
 } from '../../src/components/map/layers/WaveFrontLayer';
+import { computeTravelTimeAtDistance, computeWavefrontRadiusKm } from '../../src/core/physics/travelTime';
 import type { EarthquakeHypocenter, EEWReport } from '../../src/core/types';
 
 describe('WaveFrontLayer & Seismological Wavefront Calculations', () => {
-  describe('calculateSurfaceWaveRadius (Depth & Wave Propagation Physics)', () => {
-    it('returns 0 when elapsed time is zero or negative', () => {
-      expect(calculateSurfaceWaveRadius(0, 30, 6.0)).toBe(0);
-      expect(calculateSurfaceWaveRadius(-2.5, 30, 6.0)).toBe(0);
+  describe('JMA table isochrones', () => {
+    it('interpolates JMA2020a shallow-source table entries', () => {
+      expect(computeTravelTimeAtDistance(0, 2, 'P')).toBeCloseTo(0.417, 3);
+      expect(computeTravelTimeAtDistance(0, 2, 'S')).toBeCloseTo(0.715, 3);
+      expect(computeTravelTimeAtDistance(1, 0, 'P')).toBeCloseTo(0.208, 3);
     });
 
-    it('returns 0 when 3D wavefront has not reached the surface (radius < depth)', () => {
-      // Hypocenter depth = 30 km, vP = 6.0 km/s -> breaches surface at 30 / 6 = 5.0 seconds
-      expect(calculateSurfaceWaveRadius(1.0, 30, 6.0)).toBe(0); // 3D radius = 6 km < 30 km
-      expect(calculateSurfaceWaveRadius(3.0, 30, 6.0)).toBe(0); // 3D radius = 18 km < 30 km
-      expect(calculateSurfaceWaveRadius(4.99, 30, 6.0)).toBe(0); // 3D radius = 29.94 km < 30 km
-      expect(calculateSurfaceWaveRadius(5.0, 30, 6.0)).toBe(0); // 3D radius = 30 km == depth
+    it('uses the deeper-source JMA2001 table', () => {
+      expect(computeTravelTimeAtDistance(10, 0, 'P')).toBeCloseTo(1.773, 3);
+      expect(computeTravelTimeAtDistance(10, 0, 'S')).toBeCloseTo(3.007, 3);
     });
 
-    it('returns correct surface radius sqrt(R^2 - d^2) once wavefront breaches surface', () => {
-      // At t = 6.0s: 3D radius = 36 km, depth = 30 km
-      // Surface radius = sqrt(36^2 - 30^2) = sqrt(1296 - 900) = sqrt(396) ≈ 19.8997 km
-      const r = calculateSurfaceWaveRadius(6.0, 30, 6.0);
-      expect(r).toBeCloseTo(Math.sqrt(396), 4);
+    it('inverts table travel times to recover surface wavefront radii', () => {
+      for (const phase of ['P', 'S'] as const) {
+        const distanceKm = 137;
+        const travelTime = computeTravelTimeAtDistance(25, distanceKm, phase);
+        expect(computeWavefrontRadiusKm(travelTime, 25, phase)).toBeCloseTo(distanceKm, 4);
+      }
     });
 
-    it('correctly models S-wave arrival delay due to hypocenter depth', () => {
-      // Hypocenter depth = 10 km, vS = 3.5 km/s -> breaches surface at 10 / 3.5 ≈ 2.857s
-      expect(calculateSurfaceWaveRadius(2.0, 10, 3.5)).toBe(0); // 7 km < 10 km
-      const rS = calculateSurfaceWaveRadius(4.0, 10, 3.5); // 3D radius = 14 km
-      // Surface radius = sqrt(14^2 - 10^2) = sqrt(196 - 100) = sqrt(96) ≈ 9.79796 km
-      expect(rS).toBeCloseTo(Math.sqrt(96), 4);
+    it('returns no surface radius before the source-depth arrival time', () => {
+      expect(computeWavefrontRadiusKm(0.1, 20, 'P')).toBe(0);
     });
   });
 
@@ -93,35 +88,25 @@ describe('WaveFrontLayer & Seismological Wavefront Calculations', () => {
       originTime: 100.0
     };
 
-    it('instantiates cleanly and renders 0 sublayers before wave reaches surface', () => {
+    it('uses supplied simulation radii even when currentTime is present', () => {
       const layer = new WaveFrontLayer({
         id: 'test-wf',
         trueHypocenter: dummyHypo,
-        currentTime: 101.0 // 1s elapsed: vP * 1 = 6km < depth 20km
+        currentTime: 101.0,
+        pRadiusKm: 30,
+        sRadiusKm: 0
       });
       const sublayers = layer.renderLayers();
-      expect(sublayers.length).toBe(0);
+      expect(sublayers.map((sublayer) => sublayer.id)).toEqual(['test-wf-true-p']);
     });
 
-    it('renders PathLayer once P-wave breaches surface (t > depth / vP)', () => {
+    it('derives both wavefronts from travel-time tables when radii are omitted', () => {
       const layer = new WaveFrontLayer({
         id: 'test-wf',
         trueHypocenter: dummyHypo,
-        currentTime: 105.0 // 5s elapsed: vP * 5 = 30km > depth 20km, vS * 5 = 17.5km < 20km
+        currentTime: 110.0
       });
       const sublayers = layer.renderLayers();
-      expect(sublayers.length).toBe(1);
-      expect(sublayers[0].id).toBe('test-wf-true-p');
-    });
-
-    it('renders both P and S wave rings when both have breached surface', () => {
-      const layer = new WaveFrontLayer({
-        id: 'test-wf',
-        trueHypocenter: dummyHypo,
-        currentTime: 110.0 // 10s elapsed: vP * 10 = 60km, vS * 10 = 35km > depth 20km
-      });
-      const sublayers = layer.renderLayers();
-      expect(sublayers.length).toBe(2);
       expect(sublayers.map((l) => l.id)).toEqual(['test-wf-true-p', 'test-wf-true-s']);
     });
 

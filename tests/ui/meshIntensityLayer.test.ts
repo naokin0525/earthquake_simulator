@@ -5,9 +5,30 @@ import {
   MESH_INTENSITY_FILTER_COLOR,
 } from '../../src/components/map/layers/MeshIntensityLayer';
 import { calculateEquivalentRuptureRadiusKm } from '../../src/core/physics/finiteSource';
+import { shouldIssueEstimatedIntensityDistribution } from '../../src/core/physics/attenuation';
 import { JMA_INTENSITY_LEVELS } from '../../src/core/ui/intensityColors';
 
 describe('mesh intensity layer attenuation', () => {
+  it('only issues estimated distribution for maximum intensity 4 or higher', () => {
+    expect(shouldIssueEstimatedIntensityDistribution(null)).toBe(false);
+    expect(shouldIssueEstimatedIntensityDistribution('3')).toBe(false);
+    expect(shouldIssueEstimatedIntensityDistribution('4')).toBe(true);
+    expect(shouldIssueEstimatedIntensityDistribution('7')).toBe(true);
+  });
+
+  it('hides estimated mesh cells below intensity 4 and uses the JMA palette', () => {
+    expect(MESH_INTENSITY_SHADER_DECLARATIONS).toContain('if (continuousI < 3.5) discard;');
+    expect(MESH_INTENSITY_SHADER_DECLARATIONS).not.toContain("getJmaColor(float continuousI) {\n  if (continuousI < 0.5)");
+    for (const { scale, colour } of JMA_INTENSITY_LEVELS.filter(({ scale }) =>
+      ['4', '5-', '5+', '6-', '6+', '7'].includes(scale)
+    )) {
+      const rgb = colour.slice(1).match(/.{2}/g)!.map((channel) =>
+        (Number.parseInt(channel, 16) / 255).toFixed(6)
+      );
+      expect(MESH_INTENSITY_SHADER_DECLARATIONS).toContain(`vec4(${rgb.join(', ')},`);
+    }
+  });
+
   it('uses each tile pixel coordinate and source coordinates for attenuation', () => {
     const layer = createMeshIntensityLayer({
       hypoLat: 35.5,
@@ -49,7 +70,9 @@ describe('mesh intensity layer attenuation', () => {
     expect(MESH_INTENSITY_FILTER_COLOR).toContain('max(0.5, arv)');
     expect(MESH_INTENSITY_FILTER_COLOR).toContain('meshIntensity.faultTypeOffset');
     expect(MESH_INTENSITY_SHADER_DECLARATIONS).toContain('meshIntensity.hypoCoords');
-    for (const { scale, colour } of JMA_INTENSITY_LEVELS.slice(1)) {
+    for (const { scale, colour } of JMA_INTENSITY_LEVELS.filter(({ scale }) =>
+      ['4', '5-', '5+', '6-', '6+', '7'].includes(scale)
+    )) {
       const rgb = colour.slice(1).match(/.{2}/g)!.map((channel) =>
         (Number.parseInt(channel, 16) / 255).toFixed(6)
       );

@@ -6,6 +6,7 @@
 
 import React from 'react';
 import { useSimulation } from '../../hooks/useSimulation';
+import { shouldIssueEstimatedIntensityDistribution } from '../../core/physics/attenuation';
 import { JmaIntensityScale, StationState } from '../../core/types';
 
 const INTENSITY_ORDER: JmaIntensityScale[] = ['7', '6+', '6-', '5+', '5-', '4', '3', '2', '1', '0'];
@@ -69,7 +70,8 @@ export const EEWHud: React.FC = () => {
             { id: 'off', label: '通常地図' },
           ].map((mode) => {
             const isSelected = mapDisplayMode === mode.id;
-            const isUnavailable = mode.id === 'estimated' && !earthquakeInfoReport;
+            const isUnavailable = mode.id === 'estimated' &&
+              !shouldIssueEstimatedIntensityDistribution(earthquakeInfoReport?.maxIntensity);
             return (
               <button
                 key={mode.id}
@@ -86,7 +88,7 @@ export const EEWHud: React.FC = () => {
                   cursor: isUnavailable ? 'not-allowed' : 'pointer',
                   fontWeight: isSelected ? 'bold' : 'normal'
                 }}
-                title={isUnavailable ? '震源・震度情報の発表後に表示できます' : undefined}
+                title={isUnavailable ? '最大震度4以上の震源・震度情報発表後に表示できます' : undefined}
               >
                 {mode.label}
               </button>

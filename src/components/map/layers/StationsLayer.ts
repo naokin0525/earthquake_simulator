@@ -7,9 +7,9 @@
 
 import { ScatterplotLayer } from '@deck.gl/layers';
 import { StationDataBuffer, StationState, JmaIntensityScale, StationTriggerEvent } from '../../../core/types';
-import { jmaScaleToNumeric } from '../../../core/physics/attenuation';
+import { jmaScaleToNumeric, quantizeJmaIntensity } from '../../../core/physics/attenuation';
 import { getKyoshinColor, populationDensityToAmbientIntensity } from '../../../core/utils/colorUtils';
-import { hexToRgba, JMA_INTENSITY_LEVELS } from '../../../core/ui/intensityColors';
+import { getJmaIntensityColor, hexToRgba, JMA_INTENSITY_LEVELS } from '../../../core/ui/intensityColors';
 
 export interface StationLayerProps {
   id?: string;
@@ -19,6 +19,7 @@ export interface StationLayerProps {
   kyoshinMonitor?: boolean;
   mapVersion?: number;
   ambientNoiseLevels?: Float32Array | null;
+  intensityDisplayMode?: 'current' | 'maximum';
   onHover?: (info: any) => void;
 }
 
@@ -34,6 +35,7 @@ export function createStationsLayer(props: StationLayerProps): ScatterplotLayer 
     kyoshinMonitor,
     mapVersion,
     ambientNoiseLevels,
+    intensityDisplayMode = 'maximum',
     id = 'stations-layer'
   } = props;
 
@@ -71,11 +73,17 @@ export function createStationsLayer(props: StationLayerProps): ScatterplotLayer 
       if (state === StationState.P_TRIGGERED) {
         return [0, 0, 0, 0]; // Transparent inside for P-wave
       }
-      // S_ARRIVED
       const ev = triggerEventsMap?.get(d);
       if (ev) {
-        const num = jmaScaleToNumeric(ev.intensity);
-        return JMA_COLOR_MAP[num] ?? FALLBACK_INTENSITY_COLOR;
+        const intensity = intensityDisplayMode === 'maximum'
+          ? ev.instrumentalIntensityScale ??
+            ev.maximumObservedIntensity ??
+            ev.observedIntensity ??
+            ev.intensity
+          : ev.instrumentalIntensity !== undefined
+            ? quantizeJmaIntensity(ev.instrumentalIntensity)
+            : ev.instrumentalIntensityScale ?? quantizeJmaIntensity(ev.continuousIntensity);
+        return getJmaIntensityColor(intensity);
       }
       return FALLBACK_INTENSITY_COLOR;
     },
@@ -110,7 +118,7 @@ export function createStationsLayer(props: StationLayerProps): ScatterplotLayer 
     pickable: true,
     onHover,
     updateTriggers: {
-      getFillColor: [stationStates, triggerEventsMap, kyoshinMonitor, mapVersion, ambientNoiseLevels],
+      getFillColor: [stationStates, triggerEventsMap, kyoshinMonitor, mapVersion, ambientNoiseLevels, intensityDisplayMode],
       getLineColor: [stationStates, kyoshinMonitor],
       getRadius: [stationStates, kyoshinMonitor, Date.now()],
       getLineWidth: [stationStates]

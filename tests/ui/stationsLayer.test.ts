@@ -8,8 +8,47 @@ import {
   populationDensityToAmbientIntensity
 } from '../../src/core/utils/colorUtils';
 import { StationState, type StationDataBuffer } from '../../src/core/types';
+import { getJmaIntensityColor } from '../../src/core/ui/intensityColors';
 
 describe('ambient station noise colors', () => {
+  it('uses maximum intensity in bulletin modes and live current intensity in auto/EEW modes', () => {
+    const stationBuffer: StationDataBuffer = {
+      totalStations: 1,
+      lats: new Float32Array([35]),
+      lons: new Float32Array([139]),
+      ampFactors: new Float32Array([1]),
+      prefCodes: new Uint8Array([13])
+    };
+    const trigger = {
+      stationIndex: 0,
+      state: StationState.S_ARRIVED,
+      triggerTime: 1,
+      pArrivalTime: 1,
+      sArrivalTime: 2,
+      pgvSurface: 1,
+      intensity: '5-' as const,
+      observedIntensity: '2' as const,
+      maximumObservedIntensity: '4' as const,
+      predictedIntensity: '6-' as const,
+      continuousIntensity: 2
+    };
+    const stationStates = new Uint8Array([StationState.S_ARRIVED]);
+    const getColor = (mode: 'current' | 'maximum') => {
+      const layer = createStationsLayer({
+        stationBuffer,
+        stationStates,
+        triggerEventsMap: new Map([[0, trigger]]),
+        intensityDisplayMode: mode
+      });
+      const accessor = layer.props.getFillColor;
+      if (typeof accessor !== 'function') throw new Error('Station fill color accessor missing');
+      return accessor(0, { index: 0, data: [0], target: [] });
+    };
+
+    expect(getColor('maximum')).toEqual(getJmaIntensityColor('4'));
+    expect(getColor('current')).toEqual(getJmaIntensityColor('2'));
+  });
+
   it('keeps station icons within readable pixel size limits', () => {
     const stationBuffer: StationDataBuffer = {
       totalStations: 1,
@@ -35,7 +74,7 @@ describe('ambient station noise colors', () => {
   });
 
   it('generates a new ambient noise sample for every station on each update', () => {
-    const densities = new Float32Array([0, 9999, 10000, 26664]);
+    const densities = new Float32Array([0, 4999, 5000, 26664]);
     let firstSampleCount = 0;
     const firstSample = generateAmbientNoiseLevels(densities, () => {
       firstSampleCount++;

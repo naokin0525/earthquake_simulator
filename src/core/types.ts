@@ -82,9 +82,15 @@ export interface StationTriggerEvent {
   triggerTime: number;         // Observed trigger timestamp in seconds
   pArrivalTime: number;       // Theoretical or noisy P arrival time
   sArrivalTime: number;       // Theoretical S arrival time
-  pgvSurface: number;         // Computed peak ground velocity at surface (cm/s)
-  intensity: JmaIntensityScale; // Predicted discrete JMA intensity level (backward compatible)
-  continuousIntensity: number; // Predicted continuous floating point JMA intensity (backward compatible)
+  pgvSurface: number;         // Current observed PGV (cm/s); retained for compatibility
+  intensity: JmaIntensityScale; // Current observed intensity; retained for compatibility
+  continuousIntensity: number; // Current observed continuous intensity
+  observedPgv?: number;
+  observedIntensity?: JmaIntensityScale;
+  maximumObservedPgv?: number;
+  maximumObservedIntensity?: JmaIntensityScale;
+  predictedPeakPgv?: number; // Full-phase peak forecast, available only after S arrival
+  observedAmplitudeFraction?: number;
   predictedIntensity?: JmaIntensityScale; // Explicit predicted intensity from attenuation model
   predictedContinuousIntensity?: number; // Explicit predicted continuous intensity from attenuation model
   instrumentalIntensity?: number; // Instrumental seismic intensity from acceleration waveform (undefined if no waveform exists)
@@ -130,8 +136,16 @@ export interface StationDataBuffer {
 
 export interface IntensityUpdate {
   stationIndex: number;
-  continuousIntensity: number; // Continuous predicted intensity from attenuation model (backward compatible)
-  pgvSurface: number;
+  continuousIntensity: number; // Current observed continuous intensity; retained for compatibility
+  pgvSurface: number; // Current observed PGV; retained for compatibility
+  observedContinuousIntensity?: number;
+  observedIntensity?: JmaIntensityScale;
+  observedPgv?: number;
+  maximumObservedContinuousIntensity?: number;
+  maximumObservedIntensity?: JmaIntensityScale;
+  maximumObservedPgv?: number;
+  observedAmplitudeFraction?: number;
+  accelerationGal?: number;
   predictedContinuousIntensity?: number;
   instrumentalIntensity?: number; // Present only when acceleration waveform exists and instrumental intensity is calculated
 }

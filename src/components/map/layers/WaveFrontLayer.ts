@@ -8,6 +8,7 @@
 import { CompositeLayer, type DefaultProps, type Layer } from '@deck.gl/core';
 import { PathLayer } from '@deck.gl/layers';
 import { EEWReport, EarthquakeHypocenter } from '../../../core/types';
+import { computeTravelTimeAtDistance, computeWavefrontRadiusKm } from '../../../core/physics/travelTime';
 
 export type WaveFrontLayerProps = {
   id?: string;
@@ -35,8 +36,6 @@ interface WaveRingSpec {
 }
 
 const EARTH_RADIUS_KM = 6371.0088;
-const DEFAULT_VP_KMS = 6.0;
-const DEFAULT_VS_KMS = 3.5;
 const DEFAULT_POINTS_PER_RING = 64;
 
 /**
@@ -47,29 +46,6 @@ export function normalizeLongitude(lon: number): number {
   if (l < 0) l += 360;
   const normalized = l - 180;
   return normalized === -180 && lon > 0 ? 180 : normalized;
-}
-
-/**
- * Calculates the surface propagation radius (in km) of a seismic spherical wavefront.
- *
- * In 3D space, a seismic wave propagates spherically from the hypocenter at depth d:
- *   R_3d(t) = v * delta_t
- * When projected onto the Earth's surface (z = 0):
- *   R_3d^2 = r_surface^2 + d^2
- *
- * Therefore:
- * - If R_3d <= d: The wavefront has not yet reached the Earth's surface; r_surface = 0.
- * - If R_3d > d:  r_surface = sqrt(R_3d^2 - d^2)
- */
-export function calculateSurfaceWaveRadius(
-  elapsedTimeSec: number,
-  depthKm: number,
-  velocityKmS: number
-): number {
-  if (elapsedTimeSec <= 0) return 0;
-  const dist3d = velocityKmS * elapsedTimeSec;
-  if (dist3d <= depthKm) return 0;
-  return Math.sqrt(dist3d * dist3d - depthKm * depthKm);
 }
 
 /**
@@ -200,18 +176,15 @@ export class WaveFrontLayer extends CompositeLayer<WaveFrontLayerProps> {
       pointsPerRing = DEFAULT_POINTS_PER_RING
     } = this.props;
 
-    // 1. Calculate Ground Truth surface wave radii
-    let truePRadius = 0;
-    let trueSRadius = 0;
-
-    if (currentTime !== undefined) {
-      const elapsedTrue = Math.max(0.0, currentTime - trueHypocenter.originTime);
-      truePRadius = calculateSurfaceWaveRadius(elapsedTrue, trueHypocenter.depth, DEFAULT_VP_KMS);
-      trueSRadius = calculateSurfaceWaveRadius(elapsedTrue, trueHypocenter.depth, DEFAULT_VS_KMS);
-    } else {
-      truePRadius = pRadiusKm ?? 0;
-      trueSRadius = sRadiusKm ?? 0;
-    }
+    // Prefer the simulation's table-derived isochrones; derive them from time only
+    // for callers that do not provide radii.
+    const elapsedTrue = currentTime === undefined
+      ? 0
+      : Math.max(0.0, currentTime - trueHypocenter.originTime);
+    const truePRadius = pRadiusKm ??
+      computeWavefrontRadiusKm(elapsedTrue, trueHypocenter.depth, 'P');
+    const trueSRadius = sRadiusKm ??
+      computeWavefrontRadiusKm(elapsedTrue, trueHypocenter.depth, 'S');
 
     // 2. Build wave specifications (DRY pattern)
     const rings: WaveRingSpec[] = [];
@@ -250,15 +223,13 @@ export class WaveFrontLayer extends CompositeLayer<WaveFrontLayerProps> {
       if (currentTime !== undefined) {
         estElapsedTime = Math.max(0.0, currentTime - estHypo.originTime);
       } else {
-        // Fallback approximation when external currentTime is omitted:
-        // Convert surface radius back to 3D distance R = sqrt(r^2 + d^2)
-        const rTrue3d = Math.sqrt(truePRadius * truePRadius + trueHypocenter.depth * trueHypocenter.depth);
-        const approxCurrentTime = trueHypocenter.originTime + rTrue3d / DEFAULT_VP_KMS;
+        const approxCurrentTime = trueHypocenter.originTime +
+          computeTravelTimeAtDistance(trueHypocenter.depth, truePRadius, 'P');
         estElapsedTime = Math.max(0.0, approxCurrentTime - estHypo.originTime);
       }
 
-      const estPRadius = calculateSurfaceWaveRadius(estElapsedTime, estHypo.depth, DEFAULT_VP_KMS);
-      const estSRadius = calculateSurfaceWaveRadius(estElapsedTime, estHypo.depth, DEFAULT_VS_KMS);
+      const estPRadius = computeWavefrontRadiusKm(estElapsedTime, estHypo.depth, 'P');
+      const estSRadius = computeWavefrontRadiusKm(estElapsedTime, estHypo.depth, 'S');
 
       if (estPRadius > 0.1) {
         rings.push({

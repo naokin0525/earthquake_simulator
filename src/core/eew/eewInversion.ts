@@ -6,7 +6,11 @@
  */
 
 import { EarthquakeHypocenter } from '../types';
-import { haversineDistance, hypocentralDistance } from '../physics/travelTime';
+import {
+  computeTravelTimeAtDistance,
+  haversineDistance,
+  hypocentralDistance
+} from '../physics/travelTime';
 import { calculateBedrockPgv } from '../physics/attenuation';
 
 export interface TriggeredObservation {
@@ -15,9 +19,10 @@ export interface TriggeredObservation {
   tObs: number;     // Observed P-wave trigger timestamp in seconds
   ampFactor: number;
   measuredPgv?: number;
+  observedAmplitudeFraction?: number;
+  stationIndex?: number;
 }
 
-const VP_KMS = 6.0; // P-wave velocity used for inversion
 const MIN_LATITUDE = 20.0;
 const MAX_LATITUDE = 46.0;
 const MIN_LONGITUDE = 122.0;
@@ -51,7 +56,7 @@ function evaluateCandidate(
 ): SourceCandidate {
   const originTimes = observations.map((observation) => {
     const epicentralDistance = haversineDistance(lat, lon, observation.lat, observation.lon);
-    return observation.tObs - hypocentralDistance(epicentralDistance, depth) / VP_KMS;
+    return observation.tObs - computeTravelTimeAtDistance(depth, epicentralDistance, 'P');
   });
   const originTime = median(originTimes);
   const residual = originTimes.reduce((sum, estimate) => {
@@ -90,7 +95,10 @@ function estimateMagnitude(
         haversineDistance(lat, lon, observation.lat, observation.lon),
         depth
       );
-      const observedBedrockPgv = (observation.measuredPgv ?? 0) / observation.ampFactor;
+      const observedBedrockPgv =
+        (observation.measuredPgv ?? 0) /
+        observation.ampFactor /
+        Math.max(0.01, observation.observedAmplitudeFraction ?? 1);
       const predictedBedrockPgv = calculateBedrockPgv(
         distance,
         depth,
@@ -149,7 +157,7 @@ export function estimateHypocenterAndMagnitude(
   if (validObs.length === 1) {
     const st = validObs[0];
     const defaultDepth = 10.0;
-    const estOriginTime = st.tObs - defaultDepth / VP_KMS;
+    const estOriginTime = st.tObs - computeTravelTimeAtDistance(defaultDepth, 0, 'P');
     const estMw = estimateMagnitude(validObs, st.lat, st.lon, defaultDepth);
 
     return {

@@ -22,7 +22,8 @@ import {
   toJmaIntensityScale,
   quantizeJmaIntensity,
   jmaScaleToNumeric,
-  isJmaGreaterOrEqual
+  isJmaGreaterOrEqual,
+  shouldIssueEstimatedIntensityDistribution
 } from './intensity';
 import { calculateFiniteRuptureDistance } from './finiteSource';
 
@@ -35,7 +36,13 @@ export {
 export { calculateArvFromVs30, calculateSurfacePgv, calculateSurfacePga };
 
 // Re-export intensity quantization and comparison utilities for backward compatibility
-export { toJmaIntensityScale, quantizeJmaIntensity, jmaScaleToNumeric, isJmaGreaterOrEqual };
+export {
+  toJmaIntensityScale,
+  quantizeJmaIntensity,
+  jmaScaleToNumeric,
+  isJmaGreaterOrEqual,
+  shouldIssueEstimatedIntensityDistribution
+};
 
 const BASE_K_ATTENUATION = 0.002; // Standard inelastic attenuation coefficient (km^-1)
 const WEDGE_K_ATTENUATION = 0.0055;
@@ -121,7 +128,7 @@ export function integrateDirectRayPath(
 
 /**
  * Calculates PGV on engineering bedrock with a direct-ray path integral and
- * optional competing slab-guided path. Without full coordinates and Slab2 data,
+ * optional slab-guided contribution. Without full coordinates and Slab2 data,
  * the function retains the homogeneous Si & Midorikawa attenuation equation.
  */
 export function calculateBedrockPgv(
@@ -183,7 +190,18 @@ export function calculateBedrockPgv(
 
     if (clampedDepth >= GUIDED_PATH_MIN_DEPTH_KM) {
       const slabTopDepthKm = slabModel.getTopDepthKm(stationLat, stationLon);
-      if (slabTopDepthKm !== null && slabTopDepthKm >= 0) {
+      if (
+        slabTopDepthKm !== null &&
+        slabTopDepthKm >= 0 &&
+        slabModel.hasContinuousSlabPath(
+          hypoLat,
+          hypoLon,
+          clampedDepth,
+          stationLat,
+          stationLon,
+          slabTopDepthKm
+        )
+      ) {
         const horizontalDistanceKm = haversineDistance(hypoLat, hypoLon, stationLat, stationLon);
         const guidedSlabLengthKm = Math.hypot(horizontalDistanceKm, clampedDepth - slabTopDepthKm);
         const guidedDistanceKm = guidedSlabLengthKm + slabTopDepthKm;
@@ -205,12 +223,17 @@ export function calculateBedrockPgv(
     }
   }
 
+  const pathTerm = Number.isFinite(guidedTerm)
+    ? 0.5 * Math.log10(
+        Math.pow(10, 2 * directTerm) + Math.pow(10, 2 * guidedTerm)
+      )
+    : directTerm;
   const log10Pgv600 =
     0.58 * safeMw +
     sourceDepthTerm +
     faultTypeOffset -
     1.29 +
-    Math.max(directTerm, guidedTerm);
+    pathTerm;
 
   return Math.pow(10.0, log10Pgv600);
 }
@@ -224,15 +247,33 @@ const TAU_BASE = 4.0; // Base coda decay time constant (seconds)
  */
 export function envelope(t: number, pObs: number, sArr: number, Mw: number, peakPgv: number): number {
   if (t < pObs) return 0;
-  const rise = Math.max(0.5, sArr - pObs);
-  if (t < sArr) return peakPgv * 0.15 * ((t - pObs) / rise);
+  const fraction = waveformAmplitudeFraction(t, pObs, sArr, Mw);
+  if (t < sArr) return peakPgv * fraction;
   const tPeak = sArr + 2.5;
   const tau = TAU_BASE + Mw * 1.5; // Bigger quakes ring longer
+  if (t < tPeak) return peakPgv * fraction;
+  return peakPgv * Math.exp(-(t - tPeak) / tau);
+}
+
+/**
+ * Synthetic envelope fraction used for the currently observable part of the
+ * waveform. It is not a forecast of the event's eventual peak.
+ */
+export function waveformAmplitudeFraction(
+  t: number,
+  pObs: number,
+  sArr: number,
+  Mw = 6
+): number {
+  if (t < pObs) return 0;
+  const rise = Math.max(0.5, sArr - pObs);
+  if (t < sArr) return 0.05 + 0.10 * Math.min(1, (t - pObs) / rise);
+  const tPeak = sArr + 2.5;
   if (t < tPeak) {
     const x = (t - sArr) / (tPeak - sArr);
-    return peakPgv * (0.15 + 0.85 * x * x);
+    return 0.15 + 0.85 * x * x;
   }
-  return peakPgv * Math.exp(-(t - tPeak) / tau);
+  return Math.exp(-(t - tPeak) / (TAU_BASE + Mw * 1.5));
 }
 
 /**

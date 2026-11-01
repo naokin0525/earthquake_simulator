@@ -1,6 +1,7 @@
 import React from 'react';
 import { useSimulation } from '../../hooks/useSimulation';
 import { StationState } from '../../core/types';
+import { shouldIssueEstimatedIntensityDistribution } from '../../core/physics/attenuation';
 
 /**
  * Timeline component visualising JMA event flow.
@@ -37,7 +38,7 @@ export const JmaTimeline: React.FC = () => {
     sCount > 0, // 4: S-wave arrival
     !!flashReport, // 5: Intensity flash report (approx. 1-2 min)
     !!earthquakeInfoReport, // 6: Detailed earthquake info (approx. 3-5 min)
-    !!earthquakeInfoReport, // 7: Estimated seismic intensity distribution map
+    shouldIssueEstimatedIntensityDistribution(earthquakeInfoReport?.maxIntensity), // 7: Estimated seismic intensity distribution map
     !!lpgmReport, // 8: Long-period ground motion (approx. 10 min)
   ];
 

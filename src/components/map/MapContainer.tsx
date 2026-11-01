@@ -14,7 +14,9 @@ import { useSimulation } from '../../hooks/useSimulation';
 import { createStationsLayer } from './layers/StationsLayer';
 import { createWaveFrontLayers } from './layers/WaveFrontLayer';
 import { createHypocenterLayers } from './layers/HypocenterLayer';
-import { createMeshIntensityLayer } from './layers/MeshIntensityLayer';
+import {
+  createMeshIntensityLayer
+} from './layers/MeshIntensityLayer';
 import { createGroundAmplificationLayer } from './layers/GroundAmplificationLayer';
 import {
   createRegionIntensityLayers,
@@ -25,7 +27,8 @@ import {
 } from './layers/SubRegionLayer';
 import { StationLoader } from '../../loaders/StationLoader';
 import { Slab2Model, type SlabDepthArea } from '../../core/physics/slabModel';
-import { hexToRgba, JMA_INTENSITY_LEVELS, LPGM_INTENSITY_LEVELS } from '../../core/ui/intensityColors';
+import { getJmaIntensityColor, hexToRgba, LPGM_INTENSITY_LEVELS } from '../../core/ui/intensityColors';
+import { shouldIssueEstimatedIntensityDistribution } from '../../core/physics/attenuation';
 
 // Initial map view state focused on Japan
 const INITIAL_VIEW_STATE = {
@@ -36,13 +39,6 @@ const INITIAL_VIEW_STATE = {
   bearing: 0
 };
 const REGION_INTENSITY_ZOOM_THRESHOLD = 7;
-
-const INTENSITY_FILL_COLORS: Record<string, [number, number, number, number]> = Object.fromEntries(
-  JMA_INTENSITY_LEVELS.map(({ scale, colour }) => [
-    scale,
-    hexToRgba(colour, scale === '0' ? 70 : 85)
-  ])
-);
 
 const LPGM_FILL_COLORS: Record<number, [number, number, number, number]> = Object.fromEntries(
   LPGM_INTENSITY_LEVELS.map(({ classLevel, colour }) => [
@@ -210,6 +206,9 @@ export const MapContainer: React.FC = () => {
 
     const flashRegionMap = getRegionIntensityMap(flashReport);
     const detailRegionMap = getRegionIntensityMap(earthquakeInfoReport);
+    const estimatedDistributionIssued = shouldIssueEstimatedIntensityDistribution(
+      earthquakeInfoReport?.maxIntensity
+    );
     const activeRegionIntensityMap = effectiveMode === 'flash'
       ? flashRegionMap
       : effectiveMode === 'detail'
@@ -252,7 +251,7 @@ export const MapContainer: React.FC = () => {
           if (effectiveMode === 'flash') {
             const scale = getReportedRegionIntensity(feature, activeRegionIntensityMap);
             if (scale) {
-              return INTENSITY_FILL_COLORS[scale] ?? [35, 42, 35, 240];
+              return getJmaIntensityColor(scale, scale === '0' ? 70 : 85);
             }
             return [35, 42, 35, 240];
           }
@@ -260,7 +259,7 @@ export const MapContainer: React.FC = () => {
           if (effectiveMode === 'detail') {
             const scale = getReportedRegionIntensity(feature, activeRegionIntensityMap);
             if (scale) {
-              return INTENSITY_FILL_COLORS[scale] ?? [35, 42, 35, 240];
+              return getJmaIntensityColor(scale, scale === '0' ? 70 : 85);
             }
             return [35, 42, 35, 240];
           }
@@ -370,7 +369,10 @@ export const MapContainer: React.FC = () => {
     }
 
     // Layer 1: Custom WebGL 250m Mesh Intensity Shader Layer (if toggled)
-    if (isMeshVisible || (effectiveMode === 'estimated' && !!earthquakeInfoReport)) {
+    const shouldRenderMesh = effectiveMode === 'estimated'
+      ? estimatedDistributionIssued
+      : isMeshVisible;
+    if (shouldRenderMesh) {
       layers.push(
         createMeshIntensityLayer({
           hypoLat: hypocenter.lat,
@@ -401,7 +403,10 @@ export const MapContainer: React.FC = () => {
           triggerEventsMap,
           ambientNoiseLevels,
           kyoshinMonitor: isKyoshinMonitor,
-          mapVersion
+          mapVersion,
+          intensityDisplayMode: mapDisplayMode === 'auto' || mapDisplayMode === 'eew'
+            ? 'current'
+            : 'maximum'
         })
       );
     }

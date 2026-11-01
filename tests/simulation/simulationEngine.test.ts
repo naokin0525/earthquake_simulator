@@ -7,6 +7,8 @@
 import { describe, it, expect } from 'vitest';
 import { SimulationEngine } from '../../src/core/simulation/SimulationEngine';
 import { StationDataBuffer, StationState } from '../../src/core/types';
+import { computeWavefrontRadiusKm } from '../../src/core/physics/travelTime';
+import { calculateJmaIntensity } from '../../src/core/physics/attenuation';
 
 describe('SimulationEngine State Machine & Wave Propagation', () => {
   // Mock 3 stations
@@ -59,7 +61,7 @@ describe('SimulationEngine State Machine & Wave Propagation', () => {
     expect(engine.getStationStates()[0]).toBe(StationState.S_ARRIVED);
   });
 
-  it('should leave stations with predicted JMA intensity 0 inactive for deep-focus earthquakes', () => {
+  it('should process arrivals at stations even when predicted JMA intensity is 0', () => {
     const stations: StationDataBuffer = {
       totalStations: 2,
       lats: new Float32Array([37.3, 30.0]),
@@ -78,8 +80,8 @@ describe('SimulationEngine State Machine & Wave Propagation', () => {
     const tick = engine.update(1000);
 
     expect(tick.newTriggers.some(({ stationIndex }) => stationIndex === 0)).toBe(true);
-    expect(tick.newTriggers.some(({ stationIndex }) => stationIndex === 1)).toBe(false);
-    expect(engine.getStationStates()[1]).toBe(StationState.IDLE);
+    expect(tick.newTriggers.some(({ stationIndex }) => stationIndex === 1)).toBe(true);
+    expect(engine.getStationStates()[1]).not.toBe(StationState.IDLE);
   });
 
   it('should include finite rupture extent when predicting intensity for a large shallow earthquake', () => {
@@ -101,7 +103,9 @@ describe('SimulationEngine State Machine & Wave Propagation', () => {
     const tick = engine.update(20);
 
     expect(tick.newTriggers).toHaveLength(1);
-    expect(tick.newTriggers[0].intensity).toBe('6-');
+    expect(tick.newTriggers[0].predictedPeakPgv).toBeUndefined();
+    expect(tick.newTriggers[0].observedPgv).toBeGreaterThan(0);
+    expect(tick.newTriggers[0].predictedIntensity).toBeUndefined();
   });
 
   it('should scale simulation time step according to timeScale multiplier', () => {
@@ -115,7 +119,39 @@ describe('SimulationEngine State Machine & Wave Propagation', () => {
 
     const tick = engine.update(1.0); // 1s wall time * 5x speed = 5.0s sim time
     expect(tick.simTime).toBe(5.0);
-    expect(tick.pWaveRadiusKm).toBeCloseTo(28.28, 1);
+    expect(tick.pWaveRadiusKm).toBeCloseTo(computeWavefrontRadiusKm(5, 10, 'P'), 4);
+  });
+
+  it('keeps P-phase observations separate from the full-phase forecast at S arrival', () => {
+    const stations: StationDataBuffer = {
+      totalStations: 1,
+      lats: new Float32Array([35.5]),
+      lons: new Float32Array([139.5]),
+      ampFactors: new Float32Array([1.5]),
+      prefCodes: new Uint8Array([13])
+    };
+    const engine = new SimulationEngine(stations);
+    engine.init({
+      hypocenter: { lat: 35.5, lon: 139.5, depth: 10, magnitude: 6.5, originTime: 0 },
+      timeScale: 1,
+      tickIntervalMs: 50,
+      noiseStdDev: 0
+    });
+
+    const pArrival = engine.update(2).newTriggers[0];
+    const fullPhasePeak = calculateJmaIntensity(10, 10, 6.5, 1.5).pgvSurface;
+    expect(pArrival.state).toBe(StationState.P_TRIGGERED);
+    expect(pArrival.predictedPeakPgv).toBeUndefined();
+    expect(pArrival.predictedIntensity).toBeUndefined();
+    expect(pArrival.observedPgv).toBeGreaterThan(0);
+    expect(pArrival.observedPgv).toBeLessThan(fullPhasePeak);
+
+    const progressiveObservation = engine.update(0.5).intensityUpdates?.[0];
+    expect(progressiveObservation?.observedPgv).toBeGreaterThan(pArrival.observedPgv ?? 0);
+    const sArrival = engine.update(0.6).newTriggers[0];
+    expect(sArrival.state).toBe(StationState.S_ARRIVED);
+    expect(sArrival.predictedPeakPgv).toBeGreaterThan(sArrival.observedPgv ?? 0);
+    expect(sArrival.predictedIntensity).toBeDefined();
   });
 
   it('should rebuild trigger events and station states when seeking in either direction', () => {

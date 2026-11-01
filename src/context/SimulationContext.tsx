@@ -202,8 +202,15 @@ export const SimulationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
             if (prev) {
               triggerEventsMapRef.current.set(u.stationIndex, {
                 ...prev,
-                continuousIntensity: u.continuousIntensity,
-                pgvSurface: u.pgvSurface
+                continuousIntensity: u.observedContinuousIntensity ?? u.continuousIntensity,
+                observedIntensity: u.observedIntensity,
+                maximumObservedIntensity: u.maximumObservedIntensity ?? prev.maximumObservedIntensity,
+                maximumObservedPgv: u.maximumObservedPgv ?? prev.maximumObservedPgv,
+                intensity: u.observedIntensity ?? prev.intensity,
+                observedPgv: u.observedPgv ?? u.pgvSurface,
+                pgvSurface: u.observedPgv ?? u.pgvSurface,
+                accelerationGal: u.accelerationGal,
+                observedAmplitudeFraction: u.observedAmplitudeFraction
               });
             }
           }
@@ -241,8 +248,15 @@ export const SimulationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
             if (previous) {
               triggerEventsMapRef.current.set(update.stationIndex, {
                 ...previous,
-                continuousIntensity: update.continuousIntensity,
-                pgvSurface: update.pgvSurface
+                continuousIntensity: update.observedContinuousIntensity ?? update.continuousIntensity,
+                observedIntensity: update.observedIntensity,
+                maximumObservedIntensity: update.maximumObservedIntensity ?? previous.maximumObservedIntensity,
+                maximumObservedPgv: update.maximumObservedPgv ?? previous.maximumObservedPgv,
+                intensity: update.observedIntensity ?? previous.intensity,
+                observedPgv: update.observedPgv ?? update.pgvSurface,
+                pgvSurface: update.observedPgv ?? update.pgvSurface,
+                accelerationGal: update.accelerationGal,
+                observedAmplitudeFraction: update.observedAmplitudeFraction
               });
             }
           }

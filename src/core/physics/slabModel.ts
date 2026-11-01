@@ -1,4 +1,5 @@
 import type { EarthquakeHypocenter } from '../types';
+import { haversineDistance } from './travelTime';
 
 export interface SlabGridMetadata {
   id: string;
@@ -227,6 +228,34 @@ export class Slab2Model {
     }
 
     return shallowestDepth;
+  }
+
+  public hasContinuousSlabPath(
+    sourceLat: number,
+    sourceLon: number,
+    sourceDepthKm: number,
+    stationLat: number,
+    stationLon: number,
+    slabTopDepthKm: number,
+    stepKm = 5
+  ): boolean {
+    if (
+      !this.isInsideSlab(sourceLat, sourceLon, sourceDepthKm) ||
+      !Number.isFinite(stepKm) ||
+      stepKm <= 0
+    ) return false;
+
+    const horizontalDistanceKm = haversineDistance(sourceLat, sourceLon, stationLat, stationLon);
+    const pathLengthKm = Math.hypot(horizontalDistanceKm, sourceDepthKm - slabTopDepthKm);
+    const sampleCount = Math.max(1, Math.ceil(pathLengthKm / stepKm));
+    for (let sample = 1; sample <= sampleCount; sample++) {
+      const fraction = sample / sampleCount;
+      const lat = sourceLat + (stationLat - sourceLat) * fraction;
+      const lon = sourceLon + (stationLon - sourceLon) * fraction;
+      const depthKm = sourceDepthKm + (slabTopDepthKm - sourceDepthKm) * fraction;
+      if (!this.isInsideSlab(lat, lon, depthKm)) return false;
+    }
+    return true;
   }
 }
 

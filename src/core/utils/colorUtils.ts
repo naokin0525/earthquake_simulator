@@ -135,7 +135,7 @@ export function getKyoshinColor(val: number): [number, number, number, number] {
   return [R, G, B, 255];
 }
 
-export const AMBIENT_NOISE_MIN_DENSITY = 10000;
+export const AMBIENT_NOISE_MIN_DENSITY = 5000;
 export const AMBIENT_NOISE_REFERENCE_DENSITY = 20000;
 export const AMBIENT_NOISE_MAX_INTENSITY = -1.5;
 export const AMBIENT_NOISE_VARIATION = 0.3;

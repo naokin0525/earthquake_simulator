@@ -55,7 +55,8 @@ function startTickLoop(): void {
       stationBuffer.lats,
       stationBuffer.lons,
       stationBuffer.ampFactors,
-      tickState.simTime
+      tickState.simTime,
+      tickState.intensityUpdates
     );
 
     if (eewReport) {
@@ -75,7 +76,8 @@ function startTickLoop(): void {
       tickState.newTriggers,
       stationBuffer.prefCodes,
       stationBuffer.lats,
-      stationBuffer.lons
+      stationBuffer.lons,
+      tickState.intensityUpdates
     );
 
     if (seqResult.milestone) {
@@ -155,7 +157,8 @@ self.onmessage = async (event: MessageEvent<WorkerInboundAction>) => {
             stationBuffer.lats,
             stationBuffer.lons,
             stationBuffer.ampFactors,
-            tick.simTime
+            tick.simTime,
+            tick.intensityUpdates
           );
           tick.currentEEWReport = eewReport;
 
@@ -181,7 +184,8 @@ self.onmessage = async (event: MessageEvent<WorkerInboundAction>) => {
               [firstTrigger],
               stationBuffer.prefCodes,
               stationBuffer.lats,
-              stationBuffer.lons
+              stationBuffer.lons,
+              tick.intensityUpdates
             );
             if (first.milestone) milestones.push(first.milestone);
           }

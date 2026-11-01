@@ -7,7 +7,7 @@
 import { describe, it, expect } from 'vitest';
 import { estimateHypocenterAndMagnitude, TriggeredObservation } from '../../src/core/eew/eewInversion';
 import { EEWEngine } from '../../src/core/eew/EEWEngine';
-import { haversineDistance } from '../../src/core/physics/travelTime';
+import { computeTravelTimeAtDistance, haversineDistance } from '../../src/core/physics/travelTime';
 import { calculateBedrockPgv } from '../../src/core/physics/attenuation';
 
 describe('EEW Inversion & Warning Alert Engine', () => {
@@ -39,10 +39,9 @@ describe('EEW Inversion & Warning Alert Engine', () => {
     for (let i = 0; i < stationCoords.length; i++) {
       const st = stationCoords[i];
       const delta = haversineDistance(trueHypo.lat, trueHypo.lon, st.lat, st.lon);
-      const R = Math.sqrt(delta * delta + trueHypo.depth * trueHypo.depth);
-      
       const noise = (i % 2 === 0 ? 0.1 : -0.1);
-      const tObs = trueHypo.originTime + R / 6.0 + noise;
+      const tObs = trueHypo.originTime +
+        computeTravelTimeAtDistance(trueHypo.depth, delta, 'P') + noise;
 
       observations.push({
         lat: st.lat,
@@ -74,16 +73,20 @@ describe('EEW Inversion & Warning Alert Engine', () => {
       { lat: 34.8, lon: 140.5 }
     ];
     const observations: TriggeredObservation[] = broadStationCoords.map((station, index) => {
-      const distance = Math.sqrt(
-        haversineDistance(trueHypo.lat, trueHypo.lon, station.lat, station.lon) ** 2 + depth ** 2
-      );
+      const epicentralDistance = haversineDistance(trueHypo.lat, trueHypo.lon, station.lat, station.lon);
       const ampFactor = 1.5;
       return {
         lat: station.lat,
         lon: station.lon,
-        tObs: originTime + distance / 6 + (index === 4 ? 2.5 : 0),
+        tObs: originTime +
+          computeTravelTimeAtDistance(depth, epicentralDistance, 'P') +
+          (index === 4 ? 2.5 : 0),
         ampFactor,
-        measuredPgv: calculateBedrockPgv(distance, depth, magnitude) * ampFactor
+        measuredPgv: calculateBedrockPgv(
+          Math.hypot(epicentralDistance, depth),
+          depth,
+          magnitude
+        ) * ampFactor
       };
     });
 
@@ -98,13 +101,12 @@ describe('EEW Inversion & Warning Alert Engine', () => {
     const observations: TriggeredObservation[] = Array.from({ length: 300 }, (_, index) => {
       const lat = 25 + (index % 20);
       const lon = 125 + Math.floor(index / 20) * 1.6;
-      const distance = Math.sqrt(
-        haversineDistance(trueHypo.lat, trueHypo.lon, lat, lon) ** 2 + trueHypo.depth ** 2
-      );
+      const epicentralDistance = haversineDistance(trueHypo.lat, trueHypo.lon, lat, lon);
       return {
         lat,
         lon,
-        tObs: trueHypo.originTime + distance / 6,
+        tObs: trueHypo.originTime +
+          computeTravelTimeAtDistance(trueHypo.depth, epicentralDistance, 'P'),
         ampFactor: 1.5
       };
     });

@@ -41,11 +41,11 @@ Draws the hypocenter/epicenter marker and associated location styling on the map
 
 ### `src/components/map/layers/MeshIntensityLayer.ts`
 
-Uses the 250 m amplification tiles as a geographic grid. For each pixel it predicts engineering-bedrock PGV with the attenuation relation, applies the pixel's ARV factor, converts surface PGV to continuous JMA intensity, then colors the cell using the shared JMA intensity palette. The estimated distribution is available as a timeline/map-display step after earthquake information is issued.
+Uses the 250 m amplification tiles as a geographic grid. For each pixel it predicts engineering-bedrock PGV with the attenuation relation, applies the pixel's ARV factor, converts surface PGV to continuous JMA intensity, then colors the cell using the shared JMA intensity palette. The estimated distribution is issued only when the reported maximum intensity is 4 or higher and displays only cells of intensity 4 or higher.
 
 ### `src/components/map/layers/StationsLayer.ts`
 
-Displays station positions and their changing state (idle, P-wave triggered, or S-wave arrived), with visual intensity/monitoring information where available.
+Displays station positions and their changing state (idle, P-wave triggered, or S-wave arrived), with visual intensity/monitoring information where available. Bulletin/detail/estimated modes color observed stations by their maximum intensity; auto-sync and EEW modes use current intensity.
 
 ### `src/components/map/layers/WaveFrontLayer.ts`
 
@@ -93,7 +93,7 @@ Holds the default hypocenter and creates simulation configuration, includingthe 
 
 ### `src/core/simulation/EventSequencer.ts`
 
-Converts simulation updates into ordered JMA-style milestones and reports (EEW, intensity flash, earthquake information, LPGM, and final report). It tracks which events have already been emitted and aggregates station observations by forecast region. Intensity flash bulletins begin at about T+90 seconds, then update at one-minute intervals for at most six bulletins. `estimateEpicenterRegionName` first checks recognizable sea-area bounds, then chooses the nearest prefecture centroid using a latitude-adjusted planar distance approximation.
+Converts simulation updates into ordered JMA-style milestones and reports (EEW, intensity flash, earthquake information, LPGM, and final report). It assigns station observations to forecast regions by geographic containment and aggregates each region's maximum independently of prefecture maxima. Intensity flash bulletins begin at about T+90 seconds, then update at one-minute intervals for at most six bulletins. `estimateEpicenterRegionName` first checks recognizable sea-area bounds, then chooses the nearest prefecture centroid using a latitude-adjusted planar distance approximation.
 
 ### `src/core/simulation/SimulationEngine.ts`
 

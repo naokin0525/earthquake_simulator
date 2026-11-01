@@ -10,6 +10,7 @@ import {
    EarthquakeHypocenter,
    JmaIntensityScale,
    PrefectureWarning,
+   IntensityUpdate,
    StationTriggerEvent,
    StationState
  } from '../types';
@@ -73,6 +74,7 @@ export const PREFECTURE_CENTROIDS: Record<number, { name: string; lat: number; l
 
 export class EEWEngine {
    private triggeredObservations: TriggeredObservation[] = [];
+   private observationsByStation = new Map<number, TriggeredObservation>();
    private reportCount: number = 0;
    private latestReport: EEWReport | null = null;
    private isWarningIssued: boolean = false;
@@ -83,6 +85,7 @@ export class EEWEngine {
 
    public reset(): void {
      this.triggeredObservations = [];
+     this.observationsByStation.clear();
      this.reportCount = 0;
      this.latestReport = null;
      this.isWarningIssued = false;
@@ -93,12 +96,28 @@ export class EEWEngine {
    /**
     * Adds newly triggered station observations and evaluates whether to issue an updated EEW report.
     */
-   public update(newEvents: StationTriggerEvent[], stationsLats: Float32Array, stationsLons: Float32Array, stationsAmp: Float32Array, currentTime: number = 0): EEWReport | null {
+   public update(
+     newEvents: StationTriggerEvent[],
+     stationsLats: Float32Array,
+     stationsLons: Float32Array,
+     stationsAmp: Float32Array,
+     currentTime: number = 0,
+     observedUpdates: readonly IntensityUpdate[] = []
+   ): EEWReport | null {
      if (this.latestReport?.isFinal) {
        return null;
      }
 
-     let hasAccelerationCondition = false;
+     let hasAccelerationCondition = observedUpdates.some(
+       (update) => update.accelerationGal !== undefined && update.accelerationGal >= 100
+     );
+
+     for (const update of observedUpdates) {
+       const observation = this.observationsByStation.get(update.stationIndex);
+       if (!observation) continue;
+       observation.measuredPgv = update.observedPgv ?? update.pgvSurface;
+       observation.observedAmplitudeFraction = update.observedAmplitudeFraction ?? 1;
+     }
 
      for (const ev of newEvents) {
        if (ev.state === StationState.P_TRIGGERED) {
@@ -107,8 +126,14 @@ export class EEWEngine {
            lon: stationsLons[ev.stationIndex],
            tObs: ev.triggerTime,
            ampFactor: stationsAmp[ev.stationIndex],
-           measuredPgv: ev.pgvSurface
+           measuredPgv: ev.observedPgv ?? ev.pgvSurface,
+           observedAmplitudeFraction: ev.observedAmplitudeFraction ?? 1,
+           stationIndex: ev.stationIndex
          });
+         this.observationsByStation.set(
+           ev.stationIndex,
+           this.triggeredObservations[this.triggeredObservations.length - 1]
+         );
          this.stationsSinceLastReport++;
          if (ev.accelerationGal !== undefined && ev.accelerationGal >= 100) {
            hasAccelerationCondition = true;

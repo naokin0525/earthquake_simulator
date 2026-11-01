@@ -15,14 +15,80 @@ import {
   JmaIntensityScale,
   EarthquakeHypocenter,
   StationState,
-  StationTriggerEvent
+  StationTriggerEvent,
+  IntensityUpdate
 } from '../types';
 import { PREFECTURE_CENTROIDS } from '../eew/EEWEngine';
 import { isJmaGreaterOrEqual } from '../physics/attenuation';
 import { estimateLPGM } from '../physics/lpgm';
 import { Slab2Model } from '../physics/slabModel';
+import type { MultiPolygon, Polygon } from 'geojson';
 
 const SUB_REGION_GEOJSON_URL = '/data/sub_regions.geojson';
+
+type SubRegionGeometry = Polygon | MultiPolygon;
+type RegionRing = number[][];
+type RegionPolygon = RegionRing[];
+
+export interface SubRegionEntry {
+  code: string;
+  name: string;
+  pref?: number;
+  geometry: SubRegionGeometry;
+  bounds: [number, number, number, number];
+  lat: number;
+  lon: number;
+}
+
+function pointInRing(lon: number, lat: number, ring: RegionRing): boolean {
+  let inside = false;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const [xi, yi] = ring[i];
+    const [xj, yj] = ring[j];
+    const cross = (lon - xi) * (yj - yi) - (lat - yi) * (xj - xi);
+    if (
+      Math.abs(cross) < 1e-10 &&
+      lon >= Math.min(xi, xj) - 1e-10 &&
+      lon <= Math.max(xi, xj) + 1e-10 &&
+      lat >= Math.min(yi, yj) - 1e-10 &&
+      lat <= Math.max(yi, yj) + 1e-10
+    ) {
+      return true;
+    }
+
+    if ((yi > lat) !== (yj > lat) && lon < ((xj - xi) * (lat - yi)) / (yj - yi) + xi) {
+      inside = !inside;
+    }
+  }
+  return inside;
+}
+
+function pointInPolygon(lon: number, lat: number, rings: RegionPolygon): boolean {
+  const [outer, ...holes] = rings;
+  return !!outer &&
+    pointInRing(lon, lat, outer) &&
+    !holes.some((hole) => pointInRing(lon, lat, hole));
+}
+
+export function findContainingSubRegion(
+  lat: number,
+  lon: number,
+  regions: readonly SubRegionEntry[]
+): SubRegionEntry | null {
+  return regions.find(({ geometry, bounds }) => {
+    if (
+      lon < bounds[0] || lat < bounds[1] ||
+      lon > bounds[2] || lat > bounds[3]
+    ) {
+      return false;
+    }
+
+    const polygons = geometry.type === 'Polygon'
+      ? [geometry.coordinates as RegionPolygon]
+      : geometry.coordinates as RegionPolygon[];
+    return polygons.some((rings) => pointInPolygon(lon, lat, rings));
+  }) ?? null;
+}
 
 export type SequencerEvent =
   | { type: 'EEW_WARNING_TRIGGERED'; payload: EEWReport }
@@ -72,7 +138,7 @@ export class EventSequencer {
   }
 
   private milestones: Map<SimulationMilestoneType, SimulationMilestone> = new Map();
-  private subRegions: Array<{ code: string; name: string; lat: number; lon: number }> = [];
+  private subRegions: SubRegionEntry[] = [];
   private sArrivedStations = new Set<number>();
   private maxIntensityByPrefecture = new Map<number, JmaIntensityScale>();
   private maxIntensityByRegion = new Map<string, JmaIntensityScale>();
@@ -109,12 +175,20 @@ export class EventSequencer {
     newTriggers: readonly StationTriggerEvent[],
     stationPrefCodes: Uint8Array,
     stationLats?: Float32Array,
-    stationLons?: Float32Array
+    stationLons?: Float32Array,
+    observedUpdates: readonly IntensityUpdate[] = []
   ): {
     event?: SequencerEvent;
     milestone?: SimulationMilestone
   } {
-    this.recordSArrivals(newTriggers, stationPrefCodes, stationLats, stationLons);
+    this.recordSArrivals(newTriggers);
+    this.recordObservedIntensities(
+      newTriggers,
+      observedUpdates,
+      stationPrefCodes,
+      stationLats,
+      stationLons
+    );
 
     // 1. Origin (t=0)
     if (simTime === 0) {
@@ -163,11 +237,11 @@ export class EventSequencer {
     // 6. 震源・震度情報: issue within a few minutes for intensity 1+ or an EEW public warning.
     if (
       simTime >= 180.0 &&
-      hypo &&
+      eewReport?.estimatedHypocenter &&
       !this.isEarthquakeInfoIssued &&
       (this.hasObservedIntensityAtLeast('1') || eewReport?.isWarning)
     ) {
-      const report = this.generateEarthquakeInfoReport(simTime, hypo);
+      const report = this.generateEarthquakeInfoReport(simTime, eewReport.estimatedHypocenter);
       this.isEarthquakeInfoIssued = true;
       this.emitMilestone('EARTHQUAKE_INFO', simTime, '震源・震度情報 (約3分後)');
       return {
@@ -179,11 +253,11 @@ export class EventSequencer {
     // 7. 長周期地震動に関する観測情報: issue around 10 minutes for observed intensity 1+ and LPGM class 1+.
     if (
       simTime >= 600.0 &&
-      hypo &&
+      eewReport?.estimatedHypocenter &&
       !this.isLpgmReportIssued &&
       this.hasObservedIntensityAtLeast('1')
     ) {
-      const report = this.generateLpgmReport(simTime, hypo);
+      const report = this.generateLpgmReport(simTime, eewReport.estimatedHypocenter);
       if (report.affectedPrefectures.length > 0) {
         this.isLpgmReportIssued = true;
         this.emitMilestone('LPGM_REPORT', simTime, '長周期地震動に関する観測情報 (約10分後)');
@@ -221,38 +295,60 @@ export class EventSequencer {
     return { milestone };
   }
 
-  private recordSArrivals(
+  private recordSArrivals(newTriggers: readonly StationTriggerEvent[]): void {
+    for (const trigger of newTriggers) {
+      const { stationIndex } = trigger;
+      if (trigger.state === StationState.S_ARRIVED) this.sArrivedStations.add(stationIndex);
+    }
+  }
+
+  private recordObservedIntensities(
     newTriggers: readonly StationTriggerEvent[],
+    observedUpdates: readonly IntensityUpdate[],
     stationPrefCodes: Uint8Array,
     stationLats?: Float32Array,
     stationLons?: Float32Array
   ): void {
-    for (const trigger of newTriggers) {
-      const { stationIndex } = trigger;
+    const record = (stationIndex: number, intensity: JmaIntensityScale | undefined): void => {
       if (
-        trigger.state !== StationState.S_ARRIVED ||
+        !intensity ||
         !Number.isInteger(stationIndex) ||
         stationIndex < 0 ||
         stationIndex >= stationPrefCodes.length
-      ) {
-        continue;
-      }
+      ) return;
 
       const prefCode = stationPrefCodes[stationIndex];
       const prefecture = PREFECTURE_CENTROIDS[prefCode];
-      const regionName = this.resolveRegionName(stationIndex, stationLats, stationLons, prefCode, prefecture?.name);
-      if (!regionName) continue;
+      const regionName = this.resolveRegionName(
+        stationIndex,
+        stationLats,
+        stationLons,
+        prefCode,
+        prefecture?.name
+      );
+      if (!regionName) return;
       if (stationLats && stationLons && regionName !== prefecture?.name) {
         this.isUsingSubRegionBreakdown = true;
       }
 
-      this.sArrivedStations.add(stationIndex);
-      const intensity = trigger.instrumentalIntensityScale ?? trigger.intensity;
-      const currentMax = this.maxIntensityByRegion.get(regionName) ?? this.maxIntensityByPrefecture.get(prefCode);
-      if (!currentMax || isJmaGreaterOrEqual(intensity, currentMax)) {
+      const currentRegionMax = this.maxIntensityByRegion.get(regionName);
+      if (!currentRegionMax || isJmaGreaterOrEqual(intensity, currentRegionMax)) {
         this.maxIntensityByRegion.set(regionName, intensity);
+      }
+      const currentPrefectureMax = this.maxIntensityByPrefecture.get(prefCode);
+      if (!currentPrefectureMax || isJmaGreaterOrEqual(intensity, currentPrefectureMax)) {
         this.maxIntensityByPrefecture.set(prefCode, intensity);
       }
+    };
+
+    for (const trigger of newTriggers) {
+      record(
+        trigger.stationIndex,
+        trigger.observedIntensity ?? trigger.instrumentalIntensityScale
+      );
+    }
+    for (const update of observedUpdates) {
+      record(update.stationIndex, update.observedIntensity);
     }
   }
 
@@ -289,20 +385,29 @@ export class EventSequencer {
         if (!response.ok) throw new Error(`Failed to load sub-region GeoJSON: ${response.status}`);
         return response.json();
       })
-      .then((geojson: { features?: Array<{ properties?: { code?: string; name?: string }; geometry?: any }> }) => {
+      .then((geojson: { features?: Array<{ properties?: { code?: string; name?: string; pref?: number }; geometry?: SubRegionGeometry }> }) => {
         const features = geojson.features ?? [];
-        const entries: Array<{ code: string; name: string; lat: number; lon: number }> = [];
+        const entries: SubRegionEntry[] = [];
 
         for (const feature of features) {
           const properties = feature.properties ?? {};
           const code = properties.code ?? '';
           const name = properties.name ?? '';
-          if (!code && !name) continue;
+          if ((!code && !name) || !feature.geometry) continue;
 
-          const centroid = this.calculateFeatureCentroid(feature.geometry);
+          const geometry = feature.geometry;
+          const centroid = this.calculateFeatureCentroid(geometry);
           if (!centroid) continue;
 
-          entries.push({ code, name, lat: centroid.lat, lon: centroid.lon });
+          entries.push({
+            code,
+            name,
+            pref: properties.pref,
+            geometry,
+            bounds: centroid.bounds,
+            lat: centroid.lat,
+            lon: centroid.lon
+          });
         }
 
         this.subRegions = entries;
@@ -313,11 +418,13 @@ export class EventSequencer {
       });
   }
 
-  private calculateFeatureCentroid(geometry: any): { lat: number; lon: number } | null {
+  private calculateFeatureCentroid(
+    geometry: SubRegionGeometry
+  ): { lat: number; lon: number; bounds: [number, number, number, number] } | null {
     if (!geometry) return null;
 
     const coords: Array<[number, number]> = [];
-    const collect = (ring: any): void => {
+    const collect = (ring: unknown): void => {
       if (!Array.isArray(ring)) return;
       for (const point of ring) {
         if (Array.isArray(point) && point.length >= 2 && Number.isFinite(point[0]) && Number.isFinite(point[1])) {
@@ -346,18 +453,30 @@ export class EventSequencer {
 
     let lat = 0;
     let lon = 0;
+    let minLat = Number.POSITIVE_INFINITY;
+    let minLon = Number.POSITIVE_INFINITY;
+    let maxLat = Number.NEGATIVE_INFINITY;
+    let maxLon = Number.NEGATIVE_INFINITY;
     for (const [lng, latCoord] of coords) {
       lon += lng;
       lat += latCoord;
+      minLon = Math.min(minLon, lng);
+      minLat = Math.min(minLat, latCoord);
+      maxLon = Math.max(maxLon, lng);
+      maxLat = Math.max(maxLat, latCoord);
     }
 
     return {
       lat: lat / coords.length,
-      lon: lon / coords.length
+      lon: lon / coords.length,
+      bounds: [minLon, minLat, maxLon, maxLat]
     };
   }
 
   private findNearestRegion(lat: number, lon: number): { code: string; name: string; lat: number; lon: number } | null {
+    const containingRegion = findContainingSubRegion(lat, lon, this.subRegions);
+    if (containingRegion) return containingRegion;
+
     const regionEntries = this.subRegions.length > 0
       ? this.subRegions
       : Object.values(PREFECTURE_CENTROIDS).map((prefecture) => ({
@@ -390,12 +509,15 @@ export class EventSequencer {
 
     for (const [regionKey, intensity] of regionEntries) {
       const regionName = regionKey.toString();
-      const regionCode = Number(regionKey);
+      const region = this.subRegions.find((entry) => entry.name === regionName);
+      const numericRegionCode = Number(regionKey);
+      const regionCode = region?.pref ??
+        (Number.isFinite(numericRegionCode) ? numericRegionCode : 0);
       if (isJmaGreaterOrEqual(intensity, '3')) {
         intensities[intensity] ??= [];
         intensities[intensity]!.push(regionName);
         prefectures.push({
-          prefCode: Number.isFinite(regionCode) ? regionCode : 0,
+          prefCode: regionCode,
           prefName: regionName,
           maxIntensity: intensity
         });
@@ -425,12 +547,15 @@ export class EventSequencer {
 
     for (const [regionKey, intensity] of regionEntries) {
       const regionName = regionKey.toString();
-      const regionCode = Number(regionKey);
+      const region = this.subRegions.find((entry) => entry.name === regionName);
+      const numericRegionCode = Number(regionKey);
+      const regionCode = region?.pref ??
+        (Number.isFinite(numericRegionCode) ? numericRegionCode : 0);
       if (isJmaGreaterOrEqual(intensity, '1')) {
         intensities[intensity] ??= [];
         intensities[intensity]!.push(regionName);
         prefectures.push({
-          prefCode: Number.isFinite(regionCode) ? regionCode : 0,
+          prefCode: regionCode,
           prefName: regionName,
           maxIntensity: intensity
         });

@@ -30,10 +30,7 @@ function shaderColor(scale: string, alpha: number): string {
 
 export const MESH_INTENSITY_SHADER_DECLARATIONS = `
 vec4 getJmaColor(float continuousI) {
-  if (continuousI < 0.5) discard;
-  if (continuousI < 1.5) return ${shaderColor('1', 0.70)};
-  if (continuousI < 2.5) return ${shaderColor('2', 0.75)};
-  if (continuousI < 3.5) return ${shaderColor('3', 0.80)};
+  if (continuousI < 3.5) discard;
   if (continuousI < 4.5) return ${shaderColor('4', 0.85)};
   if (continuousI < 5.0) return ${shaderColor('5-', 0.90)};
   if (continuousI < 5.5) return ${shaderColor('5+', 0.90)};
