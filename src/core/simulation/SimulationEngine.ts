@@ -8,6 +8,7 @@
 import {
   EarthquakeHypocenter,
   IntensityUpdate,
+  JmaIntensityScale,
   SimulationConfig,
   SimulationTickState,
   StationDataBuffer,
@@ -46,7 +47,13 @@ export class SimulationEngine {
   private slabFractions: Float32Array = new Float32Array(0);
   private stationStates: Uint8Array = new Uint8Array(0);
   private predictedPeakPgvs: Float32Array = new Float32Array(0);
+  private predictedContinuousIntensities: Float32Array = new Float32Array(0);
+  private predictedIntensities: Array<JmaIntensityScale | undefined> = [];
   private maximumObservedPgvs: Float32Array = new Float32Array(0);
+  private pArrivalOrder: Uint32Array = new Uint32Array(0);
+  private nextPArrivalIndex = 0;
+  private activeStationIndices: number[] = [];
+  private activeStationCount = 0;
 
   constructor(stations: StationDataBuffer, private readonly slabModel?: Slab2Model) {
     this.stations = stations;
@@ -71,6 +78,8 @@ export class SimulationEngine {
     this.slabFractions = new Float32Array(N);
     this.stationStates = new Uint8Array(N); // 0 = IDLE
     this.predictedPeakPgvs = new Float32Array(N);
+    this.predictedContinuousIntensities = new Float32Array(N);
+    this.predictedIntensities = new Array<JmaIntensityScale | undefined>(N);
     this.maximumObservedPgvs = new Float32Array(N);
 
     const hypo = config.hypocenter;
@@ -92,6 +101,12 @@ export class SimulationEngine {
       const noise = generateGaussianNoise(noiseStdDev);
       this.pObservedTimes[i] = Math.max(0.0, this.pArrivalTimes[i] + noise);
     }
+
+    this.pArrivalOrder = Uint32Array.from(
+      Array.from({ length: N }, (_, index) => index)
+        .sort((left, right) => this.pObservedTimes[left] - this.pObservedTimes[right])
+    );
+    this.reset();
   }
 
   public reset(): void {
@@ -99,7 +114,12 @@ export class SimulationEngine {
     this.isRunning = false;
     this.stationStates.fill(0);
     this.predictedPeakPgvs.fill(0);
+    this.predictedContinuousIntensities.fill(0);
+    this.predictedIntensities.fill(undefined);
     this.maximumObservedPgvs.fill(0);
+    this.nextPArrivalIndex = 0;
+    this.activeStationIndices = [];
+    this.activeStationCount = 0;
   }
 
   public setTimeScale(scale: number): void {
@@ -109,10 +129,7 @@ export class SimulationEngine {
   }
 
   public seek(timeSeconds: number): SimulationTickState {
-    this.simTime = 0.0;
-    this.stationStates.fill(StationState.IDLE);
-    this.predictedPeakPgvs.fill(0);
-    this.maximumObservedPgvs.fill(0);
+    this.reset();
 
     const targetTime = Math.max(0.0, timeSeconds);
     const timeScale = this.config?.timeScale ?? 1.0;
@@ -149,99 +166,99 @@ export class SimulationEngine {
     const pWaveRadiusKm = computeWavefrontRadiusKm(elapsedTime, hypo.depth, 'P');
     const sWaveRadiusKm = computeWavefrontRadiusKm(elapsedTime, hypo.depth, 'S');
 
-    const N = this.stations.totalStations;
     const newTriggers: StationTriggerEvent[] = [];
     const intensityUpdates: IntensityUpdate[] = [];
+    const activeStationCountBeforeUpdate = this.activeStationIndices.length;
 
-    for (let i = 0; i < N; i++) {
-      const currentState = this.stationStates[i];
+    while (this.nextPArrivalIndex < this.pArrivalOrder.length) {
+      const i = this.pArrivalOrder[this.nextPArrivalIndex];
+      const pObs = this.pObservedTimes[i];
+      if (pObs > this.simTime) break;
+      this.nextPArrivalIndex++;
+
+      if (this.stationStates[i] !== StationState.IDLE) continue;
+
+      // P-wave trigger: a station transitions from silent to activated once its modeled arrival time is reached.
+      this.stationStates[i] = StationState.P_TRIGGERED;
+      this.activeStationIndices.push(i);
+      this.activeStationCount++;
+
+      const stLat = this.stations.lats[i];
+      const stLon = this.stations.lons[i];
+      const arv = this.stations.ampFactors[i];
+      const rSlab = this.slabFractions[i];
+      const faultDist = pointSourceDistance(stLat, stLon, hypo.lat, hypo.lon, hypo.depth);
+      const {
+        pgvSurface: predictedPeakPgv,
+        continuousIntensity: predictedContinuousIntensity,
+        jmaScale: predictedIntensity
+      } = calculateJmaIntensity(
+        faultDist,
+        hypo.depth,
+        hypo.magnitude,
+        arv,
+        rSlab,
+        undefined,
+        stLat,
+        stLon,
+        hypo.lat,
+        hypo.lon,
+        this.slabModel
+      );
+
+      this.predictedPeakPgvs[i] = predictedPeakPgv;
+      this.predictedContinuousIntensities[i] = predictedContinuousIntensity;
+      this.predictedIntensities[i] = predictedIntensity;
+
+      const sArr = this.sArrivalTimes[i];
+      const observedPgv = envelope(this.simTime, pObs, sArr, hypo.magnitude, predictedPeakPgv);
+      const continuousIntensity = calculateContinuousJmaIntensity(observedPgv);
+      const observedIntensity = quantizeJmaIntensity(continuousIntensity);
+      this.maximumObservedPgvs[i] = Math.max(this.maximumObservedPgvs[i], observedPgv);
+      const maximumObservedIntensity = quantizeJmaIntensity(
+        calculateContinuousJmaIntensity(this.maximumObservedPgvs[i])
+      );
+      const observedAmplitudeFraction = waveformAmplitudeFraction(
+        this.simTime,
+        pObs,
+        sArr,
+        hypo.magnitude
+      );
+
+      newTriggers.push({
+        stationIndex: i,
+        state: StationState.P_TRIGGERED,
+        triggerTime: pObs,
+        pArrivalTime: this.pArrivalTimes[i],
+        sArrivalTime: sArr,
+        pgvSurface: observedPgv,
+        observedPgv,
+        observedIntensity,
+        maximumObservedPgv: this.maximumObservedPgvs[i],
+        maximumObservedIntensity,
+        intensity: observedIntensity,
+        continuousIntensity,
+        observedAmplitudeFraction
+      });
+    }
+
+    for (let activeIndex = 0; activeIndex < this.activeStationIndices.length; activeIndex++) {
+      const i = this.activeStationIndices[activeIndex];
       const pObs = this.pObservedTimes[i];
       const sArr = this.sArrivalTimes[i];
 
-      if (currentState === StationState.IDLE && this.simTime >= pObs) {
-        // P-wave trigger: a station transitions from silent to activated once the modeled arrival time is reached.
-        this.stationStates[i] = StationState.P_TRIGGERED;
-
-        const stLat = this.stations.lats[i];
-        const stLon = this.stations.lons[i];
-        const arv = this.stations.ampFactors[i];
-        const rSlab = this.slabFractions[i];
-        const faultDist = pointSourceDistance(stLat, stLon, hypo.lat, hypo.lon, hypo.depth);
-        const { pgvSurface: predictedPeakPgv } = calculateJmaIntensity(
-          faultDist,
-          hypo.depth,
-          hypo.magnitude,
-          arv,
-          rSlab,
-          undefined,
-          stLat,
-          stLon,
-          hypo.lat,
-          hypo.lon,
-          this.slabModel
-        );
-
-        this.predictedPeakPgvs[i] = predictedPeakPgv;
-        const observedPgv = envelope(this.simTime, pObs, sArr, hypo.magnitude, predictedPeakPgv);
-        const continuousIntensity = calculateContinuousJmaIntensity(observedPgv);
-        const observedIntensity = quantizeJmaIntensity(continuousIntensity);
-        this.maximumObservedPgvs[i] = Math.max(this.maximumObservedPgvs[i], observedPgv);
-        const maximumObservedIntensity = quantizeJmaIntensity(
-          calculateContinuousJmaIntensity(this.maximumObservedPgvs[i])
-        );
-        const observedAmplitudeFraction = waveformAmplitudeFraction(
-          this.simTime,
-          pObs,
-          sArr,
-          hypo.magnitude
-        );
-
-        newTriggers.push({
-          stationIndex: i,
-          state: StationState.P_TRIGGERED,
-          triggerTime: pObs,
-          pArrivalTime: this.pArrivalTimes[i],
-          sArrivalTime: sArr,
-          pgvSurface: observedPgv,
-          observedPgv,
-          observedIntensity,
-          maximumObservedPgv: this.maximumObservedPgvs[i],
-          maximumObservedIntensity,
-          intensity: observedIntensity,
-          continuousIntensity,
-          observedAmplitudeFraction
-        });
-      } else if (currentState === StationState.P_TRIGGERED && this.simTime >= sArr) {
+      if (
+        activeIndex < activeStationCountBeforeUpdate &&
+        this.stationStates[i] === StationState.P_TRIGGERED &&
+        this.simTime >= sArr
+      ) {
         // S-wave trigger: once the S-wave arrives, the station enters a stronger state that often
         // correlates with stronger shaking and more severe EEW intensity estimates.
         this.stationStates[i] = StationState.S_ARRIVED;
 
-        const arv = this.stations.ampFactors[i];
-        const rSlab = this.slabFractions[i];
-        // Compute distance to fault plane for S‑wave trigger (same as P‑wave)
-        const stLat = this.stations.lats[i];
-        const stLon = this.stations.lons[i];
-        const faultDist = pointSourceDistance(stLat, stLon, hypo.lat, hypo.lon, hypo.depth);
-
-        const {
-          pgvSurface: predictedPeakPgv,
-          continuousIntensity: predictedContinuousIntensity,
-          jmaScale: predictedIntensity
-        } = calculateJmaIntensity(
-          faultDist,
-          hypo.depth,
-          hypo.magnitude,
-          arv,
-          rSlab,
-          undefined,
-          stLat,
-          stLon,
-          hypo.lat,
-          hypo.lon,
-          this.slabModel
-        );
-
-        this.predictedPeakPgvs[i] = predictedPeakPgv;
+        const predictedPeakPgv = this.predictedPeakPgvs[i];
+        const predictedContinuousIntensity = this.predictedContinuousIntensities[i];
+        const predictedIntensity = this.predictedIntensities[i];
         const observedPgv = envelope(this.simTime, pObs, sArr, hypo.magnitude, predictedPeakPgv);
         const continuousIntensity = calculateContinuousJmaIntensity(observedPgv);
         const observedIntensity = quantizeJmaIntensity(continuousIntensity);
@@ -276,35 +293,33 @@ export class SimulationEngine {
         });
       }
 
-      if (this.stationStates[i] >= StationState.P_TRIGGERED) {
-        const predictedPeakPgv = this.predictedPeakPgvs[i];
-        const observedPgv = envelope(this.simTime, pObs, sArr, hypo.magnitude, predictedPeakPgv);
-        const continuousIntensity = calculateContinuousJmaIntensity(observedPgv);
-        const observedIntensity = quantizeJmaIntensity(continuousIntensity);
-        this.maximumObservedPgvs[i] = Math.max(this.maximumObservedPgvs[i], observedPgv);
-        const maximumObservedIntensity = quantizeJmaIntensity(
-          calculateContinuousJmaIntensity(this.maximumObservedPgvs[i])
-        );
-        intensityUpdates.push({
-          stationIndex: i,
-          continuousIntensity,
-          observedContinuousIntensity: continuousIntensity,
-          observedIntensity,
-          observedPgv,
-          maximumObservedContinuousIntensity: calculateContinuousJmaIntensity(
-            this.maximumObservedPgvs[i]
-          ),
-          maximumObservedIntensity,
-          maximumObservedPgv: this.maximumObservedPgvs[i],
-          observedAmplitudeFraction: waveformAmplitudeFraction(
-            this.simTime,
-            pObs,
-            sArr,
-            hypo.magnitude
-          ),
-          pgvSurface: observedPgv
-        });
-      }
+      const predictedPeakPgv = this.predictedPeakPgvs[i];
+      const observedPgv = envelope(this.simTime, pObs, sArr, hypo.magnitude, predictedPeakPgv);
+      const continuousIntensity = calculateContinuousJmaIntensity(observedPgv);
+      const observedIntensity = quantizeJmaIntensity(continuousIntensity);
+      this.maximumObservedPgvs[i] = Math.max(this.maximumObservedPgvs[i], observedPgv);
+      const maximumObservedIntensity = quantizeJmaIntensity(
+        calculateContinuousJmaIntensity(this.maximumObservedPgvs[i])
+      );
+      intensityUpdates.push({
+        stationIndex: i,
+        continuousIntensity,
+        observedContinuousIntensity: continuousIntensity,
+        observedIntensity,
+        observedPgv,
+        maximumObservedContinuousIntensity: calculateContinuousJmaIntensity(
+          this.maximumObservedPgvs[i]
+        ),
+        maximumObservedIntensity,
+        maximumObservedPgv: this.maximumObservedPgvs[i],
+        observedAmplitudeFraction: waveformAmplitudeFraction(
+          this.simTime,
+          pObs,
+          sArr,
+          hypo.magnitude
+        ),
+        pgvSurface: observedPgv
+      });
     }
 
     return {
@@ -327,5 +342,9 @@ export class SimulationEngine {
 
   public getStationStates(): Uint8Array {
     return this.stationStates;
+  }
+
+  public getActiveStationCount(): number {
+    return this.activeStationCount;
   }
 }

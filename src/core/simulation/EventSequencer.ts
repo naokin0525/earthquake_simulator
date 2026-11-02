@@ -139,6 +139,10 @@ export class EventSequencer {
 
   private milestones: Map<SimulationMilestoneType, SimulationMilestone> = new Map();
   private subRegions: SubRegionEntry[] = [];
+  private stationRegionNames: Array<string | null> | null = null;
+  private mappedStationLats: Float32Array | undefined;
+  private mappedStationLons: Float32Array | undefined;
+  private mappedSubRegions: SubRegionEntry[] | null = null;
   private sArrivedStations = new Set<number>();
   private maxIntensityByPrefecture = new Map<number, JmaIntensityScale>();
   private maxIntensityByRegion = new Map<string, JmaIntensityScale>();
@@ -181,6 +185,7 @@ export class EventSequencer {
     event?: SequencerEvent;
     milestone?: SimulationMilestone
   } {
+    this.ensureStationRegionNames(stationPrefCodes, stationLats, stationLons);
     this.recordSArrivals(newTriggers);
     this.recordObservedIntensities(
       newTriggers,
@@ -360,6 +365,15 @@ export class EventSequencer {
     fallbackName?: string
   ): string | null {
     if (stationLats && stationLons && stationIndex >= 0 && stationIndex < stationLats.length && stationIndex < stationLons.length) {
+      if (
+        this.stationRegionNames &&
+        this.mappedStationLats === stationLats &&
+        this.mappedStationLons === stationLons &&
+        this.mappedSubRegions === this.subRegions
+      ) {
+        return this.stationRegionNames[stationIndex] ?? null;
+      }
+
       const lat = stationLats[stationIndex];
       const lon = stationLons[stationIndex];
       if (Number.isFinite(lat) && Number.isFinite(lon)) {
@@ -375,6 +389,36 @@ export class EventSequencer {
     }
 
     return fallbackName ?? null;
+  }
+
+  private ensureStationRegionNames(
+    stationPrefCodes: Uint8Array,
+    stationLats?: Float32Array,
+    stationLons?: Float32Array
+  ): void {
+    if (!stationLats || !stationLons) return;
+    if (
+      this.stationRegionNames &&
+      this.mappedStationLats === stationLats &&
+      this.mappedStationLons === stationLons &&
+      this.mappedSubRegions === this.subRegions
+    ) return;
+
+    const stationCount = Math.min(stationPrefCodes.length, stationLats.length, stationLons.length);
+    this.stationRegionNames = new Array<string | null>(stationCount);
+    for (let index = 0; index < stationCount; index++) {
+      const lat = stationLats[index];
+      const lon = stationLons[index];
+      const prefCode = stationPrefCodes[index];
+      const prefecture = PREFECTURE_CENTROIDS[prefCode];
+      this.stationRegionNames[index] = Number.isFinite(lat) && Number.isFinite(lon)
+        ? this.findNearestRegion(lat, lon)?.name ?? prefecture?.name ?? null
+        : prefecture?.name ?? null;
+    }
+
+    this.mappedStationLats = stationLats;
+    this.mappedStationLons = stationLons;
+    this.mappedSubRegions = this.subRegions;
   }
 
   private loadSubRegions(): void {

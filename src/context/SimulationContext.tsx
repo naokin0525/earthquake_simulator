@@ -8,12 +8,14 @@ import React, { createContext, useContext, useEffect, useRef, useState, useCallb
 import {
   EEWReport,
   EarthquakeHypocenter,
-  SimulationTickState,
+  IntensityUpdate,
+  JmaIntensityScale,
   StationDataBuffer,
   StationState,
   StationTriggerEvent,
   WorkerInboundAction,
   WorkerOutboundEvent,
+  PACKED_INTENSITY_UPDATE_STRIDE,
   IntensityFlashReport,
   EarthquakeInfoReport,
   LPGMReport,
@@ -26,7 +28,7 @@ import {
 } from '../core/simulationState';
 import { generateAmbientNoiseLevels } from '../core/utils/colorUtils';
 import { formatEewWarningAnnouncement } from '../core/ui/EEWFormatter';
-import { StationLoader } from '../loaders/StationLoader';
+import { StationLoader, type StationMetadata } from '../loaders/StationLoader';
 import { computeAmpFactorsFromTiles } from '../loaders/AmpFactorTileLoader';
 import { preloadMeshTiles, type MeshTileLoadProgress } from '../loaders/MeshTileLoader';
 import { loadDailyNoise } from '../loaders/NoiseLoader';
@@ -34,6 +36,46 @@ import { audioAlertSystem } from '../utils/audioAlert';
 
 export type MapDisplayMode = 'auto' | 'eew' | 'flash' | 'detail' | 'estimated' | 'lpgm' | 'off';
 export type StartupPhase = 'tiles' | 'stations' | 'worker';
+
+const INTENSITY_SCALES: readonly JmaIntensityScale[] = [
+  '0', '1', '2', '3', '4', '5-', '5+', '6-', '6+', '7'
+];
+
+function unpackIntensityUpdates(packed: Float32Array): IntensityUpdate[] {
+  const updates: IntensityUpdate[] = [];
+  for (let offset = 0; offset < packed.length; offset += PACKED_INTENSITY_UPDATE_STRIDE) {
+    const observedIntensity = INTENSITY_SCALES[packed[offset + 2]];
+    const maximumObservedIntensity = INTENSITY_SCALES[packed[offset + 5]];
+    const observedPgv = packed[offset + 3];
+    updates.push({
+      stationIndex: packed[offset],
+      continuousIntensity: packed[offset + 1],
+      observedContinuousIntensity: packed[offset + 1],
+      observedIntensity,
+      observedPgv,
+      pgvSurface: observedPgv,
+      maximumObservedContinuousIntensity: Number.isNaN(packed[offset + 4])
+        ? undefined
+        : packed[offset + 4],
+      maximumObservedIntensity,
+      maximumObservedPgv: Number.isNaN(packed[offset + 6]) ? undefined : packed[offset + 6],
+      observedAmplitudeFraction: Number.isNaN(packed[offset + 7]) ? undefined : packed[offset + 7]
+    });
+  }
+  return updates;
+}
+
+function applyIntensityUpdate(previous: StationTriggerEvent, update: IntensityUpdate): void {
+  previous.continuousIntensity = update.observedContinuousIntensity ?? update.continuousIntensity;
+  previous.observedIntensity = update.observedIntensity;
+  previous.maximumObservedIntensity = update.maximumObservedIntensity ?? previous.maximumObservedIntensity;
+  previous.maximumObservedPgv = update.maximumObservedPgv ?? previous.maximumObservedPgv;
+  previous.intensity = update.observedIntensity ?? previous.intensity;
+  previous.observedPgv = update.observedPgv ?? update.pgvSurface;
+  previous.pgvSurface = update.observedPgv ?? update.pgvSurface;
+  previous.accelerationGal = update.accelerationGal;
+  previous.observedAmplitudeFraction = update.observedAmplitudeFraction;
+}
 
 interface SimulationContextValue {
   isReady: boolean;
@@ -48,6 +90,7 @@ interface SimulationContextValue {
   timeScale: number;
   hypocenter: EarthquakeHypocenter;
   stationBuffer: StationDataBuffer | null;
+  stationMetadata: StationMetadata[];
   stationStates: Uint8Array;
   triggerEventsMap: Map<number, StationTriggerEvent>;
   eewReport: EEWReport | null;
@@ -105,6 +148,7 @@ export const SimulationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   const [timeScale, setTimeScaleState] = useState(1.0);
   const [hypocenter, setHypocenterState] = useState<EarthquakeHypocenter>(DEFAULT_HYPOCENTER);
   const [stationBuffer, setStationBuffer] = useState<StationDataBuffer | null>(null);
+  const [stationMetadata, setStationMetadata] = useState<StationMetadata[]>([]);
   const [eewReport, setEewReport] = useState<EEWReport | null>(null);
   const [flashReport, setFlashReport] = useState<IntensityFlashReport | null>(null);
   const [earthquakeInfoReport, setEarthquakeInfoReport] = useState<EarthquakeInfoReport | null>(null);
@@ -186,7 +230,8 @@ export const SimulationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         break;
 
       case 'TICK': {
-        const tick: SimulationTickState = msg.payload;
+        const { tick, intensityUpdates: packedIntensityUpdates } = msg.payload;
+        const intensityUpdates = unpackIntensityUpdates(packedIntensityUpdates);
         setSimTime(tick.simTime);
         setPRadiusKm(tick.pWaveRadiusKm);
         setSRadiusKm(tick.sWaveRadiusKm);
@@ -196,27 +241,14 @@ export const SimulationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
           triggerEventsMapRef.current.set(ev.stationIndex, ev);
         }
 
-        if (tick.intensityUpdates) {
-          for (const u of tick.intensityUpdates) {
+        if (intensityUpdates.length > 0) {
+          for (const u of intensityUpdates) {
             const prev = triggerEventsMapRef.current.get(u.stationIndex);
-            if (prev) {
-              triggerEventsMapRef.current.set(u.stationIndex, {
-                ...prev,
-                continuousIntensity: u.observedContinuousIntensity ?? u.continuousIntensity,
-                observedIntensity: u.observedIntensity,
-                maximumObservedIntensity: u.maximumObservedIntensity ?? prev.maximumObservedIntensity,
-                maximumObservedPgv: u.maximumObservedPgv ?? prev.maximumObservedPgv,
-                intensity: u.observedIntensity ?? prev.intensity,
-                observedPgv: u.observedPgv ?? u.pgvSurface,
-                pgvSurface: u.observedPgv ?? u.pgvSurface,
-                accelerationGal: u.accelerationGal,
-                observedAmplitudeFraction: u.observedAmplitudeFraction
-              });
-            }
+            if (prev) applyIntensityUpdate(prev, u);
           }
         }
 
-        if (tick.newTriggers.length > 0 || (tick.intensityUpdates && tick.intensityUpdates.length > 0)) {
+        if (tick.newTriggers.length > 0 || intensityUpdates.length > 0) {
           setMapVersion((v) => v + 1);
         }
 
@@ -245,20 +277,7 @@ export const SimulationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         if (tick.intensityUpdates) {
           for (const update of tick.intensityUpdates) {
             const previous = triggerEventsMapRef.current.get(update.stationIndex);
-            if (previous) {
-              triggerEventsMapRef.current.set(update.stationIndex, {
-                ...previous,
-                continuousIntensity: update.observedContinuousIntensity ?? update.continuousIntensity,
-                observedIntensity: update.observedIntensity,
-                maximumObservedIntensity: update.maximumObservedIntensity ?? previous.maximumObservedIntensity,
-                maximumObservedPgv: update.maximumObservedPgv ?? previous.maximumObservedPgv,
-                intensity: update.observedIntensity ?? previous.intensity,
-                observedPgv: update.observedPgv ?? update.pgvSurface,
-                pgvSurface: update.observedPgv ?? update.pgvSurface,
-                accelerationGal: update.accelerationGal,
-                observedAmplitudeFraction: update.observedAmplitudeFraction
-              });
-            }
+            if (previous) applyIntensityUpdate(previous, update);
           }
         }
 
@@ -336,6 +355,7 @@ export const SimulationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
           '/data/stations/stations_meta.json'
         );
         if (cancelled) return;
+        setStationMetadata(dataSet.metadata);
 
         // Initial buffer without ampFactors; we'll compute amplification from tiles.
         const buffer: StationDataBuffer = {
@@ -530,6 +550,7 @@ export const SimulationProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         timeScale,
         hypocenter,
         stationBuffer,
+        stationMetadata,
         stationStates: stationStatesRef.current,
         triggerEventsMap: triggerEventsMapRef.current,
         eewReport,

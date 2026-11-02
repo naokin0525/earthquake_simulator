@@ -159,6 +159,13 @@ export interface SimulationTickState {
   currentEEWReport: EEWReport | null; // Latest EEW report if generated/updated
 }
 
+export const PACKED_INTENSITY_UPDATE_STRIDE = 8;
+
+export interface PackedSimulationTick {
+  tick: Omit<SimulationTickState, 'intensityUpdates'>;
+  intensityUpdates: Float32Array;
+}
+
 export interface SimulationSeekSnapshot {
   tick: SimulationTickState;
   eewReport: EEWReport | null;
@@ -183,7 +190,7 @@ export type WorkerInboundAction =
 
 export type WorkerOutboundEvent =
   | { type: 'READY' }
-  | { type: 'TICK'; payload: SimulationTickState }
+  | { type: 'TICK'; payload: PackedSimulationTick }
   | { type: 'SEEK_SNAPSHOT'; payload: SimulationSeekSnapshot }
   | { type: 'EEW_ALERT'; payload: EEWReport }
   | { type: 'INTENSITY_REPORT'; payload: { prefCode: number; maxIntensity: JmaIntensityScale }[] }

@@ -10,9 +10,13 @@ import {
   SimulationMilestone,
   SimulationSeekSnapshot,
   StationDataBuffer,
+  IntensityUpdate,
+  JmaIntensityScale,
   StationState,
+  StationTriggerEvent,
   WorkerInboundAction,
-  WorkerOutboundEvent
+  WorkerOutboundEvent,
+  PACKED_INTENSITY_UPDATE_STRIDE
 } from '../core/types';
 import { SimulationEngine } from '../core/simulation/SimulationEngine';
 import { EEWEngine } from '../core/eew/EEWEngine';
@@ -27,14 +31,47 @@ let stationBuffer: StationDataBuffer | null = null;
 let tickTimer: ReturnType<typeof setInterval> | null = null;
 let lastTickTimestamp: number = 0;
 const TICK_INTERVAL_MS = 50; // 20 Hz tick rate (50 ms per tick)
+const UI_UPDATE_INTERVAL_MS = 100; // Keep React and Deck.gl updates at 10 Hz.
+let uiUpdateElapsedMs = 0;
+let pendingTriggers: StationTriggerEvent[] = [];
+const INTENSITY_SCALE_CODES: Record<JmaIntensityScale, number> = {
+  '0': 0,
+  '1': 1,
+  '2': 2,
+  '3': 3,
+  '4': 4,
+  '5-': 5,
+  '5+': 6,
+  '6-': 7,
+  '6+': 8,
+  '7': 9
+};
 
-function postWorkerMessage(event: WorkerOutboundEvent): void {
-  self.postMessage(event);
+function postWorkerMessage(event: WorkerOutboundEvent, transferables: Transferable[] = []): void {
+  self.postMessage(event, transferables);
+}
+
+function packIntensityUpdates(updates: readonly IntensityUpdate[]): Float32Array {
+  const packed = new Float32Array(updates.length * PACKED_INTENSITY_UPDATE_STRIDE);
+  for (let index = 0; index < updates.length; index++) {
+    const update = updates[index];
+    const offset = index * PACKED_INTENSITY_UPDATE_STRIDE;
+    packed[offset] = update.stationIndex;
+    packed[offset + 1] = update.observedContinuousIntensity ?? update.continuousIntensity;
+    packed[offset + 2] = INTENSITY_SCALE_CODES[update.observedIntensity ?? '0'];
+    packed[offset + 3] = update.observedPgv ?? update.pgvSurface;
+    packed[offset + 4] = update.maximumObservedContinuousIntensity ?? Number.NaN;
+    packed[offset + 5] = INTENSITY_SCALE_CODES[update.maximumObservedIntensity ?? '0'];
+    packed[offset + 6] = update.maximumObservedPgv ?? Number.NaN;
+    packed[offset + 7] = update.observedAmplitudeFraction ?? Number.NaN;
+  }
+  return packed;
 }
 
 function startTickLoop(): void {
   stopTickLoop();
   lastTickTimestamp = performance.now();
+  uiUpdateElapsedMs = 0;
 
   tickTimer = setInterval(() => {
     if (!simulationEngine || !stationBuffer || !eewEngine || !eventSequencer) return;
@@ -43,8 +80,10 @@ function startTickLoop(): void {
     // time is converted to simulated seconds, which lets the engine run faster/slower than real time
     // according to the configured timeScale factor.
     const now = performance.now();
-    const dtSeconds = (now - lastTickTimestamp) / 1000.0;
+    const elapsedMs = now - lastTickTimestamp;
+    const dtSeconds = elapsedMs / 1000.0;
     lastTickTimestamp = now;
+    uiUpdateElapsedMs += elapsedMs;
 
     // 1) Advance the physical simulation state and collect any newly triggered stations.
     const tickState = simulationEngine.update(dtSeconds);
@@ -70,7 +109,7 @@ function startTickLoop(): void {
     //    flash report, earthquake info, LPGM report) so the UI can show timed narrative feedback.
     const seqResult = eventSequencer.update(
       tickState.simTime,
-      simulationEngine.getStationStates().filter((s: number) => s !== 0).length,
+      simulationEngine.getActiveStationCount(),
       tickState.currentEEWReport,
       simulationEngine.getConfig()?.hypocenter,
       tickState.newTriggers,
@@ -94,8 +133,19 @@ function startTickLoop(): void {
       }
     }
 
-    // 4) Push the current simulation snapshot to the main thread at the worker's fixed cadence.
-    postWorkerMessage({ type: 'TICK', payload: tickState });
+    // Keep simulation and reporting at 20 Hz, but limit expensive UI snapshots to 10 Hz.
+    pendingTriggers.push(...tickState.newTriggers);
+    if (uiUpdateElapsedMs >= UI_UPDATE_INTERVAL_MS) {
+      uiUpdateElapsedMs %= UI_UPDATE_INTERVAL_MS;
+      tickState.newTriggers = pendingTriggers;
+      pendingTriggers = [];
+      const { intensityUpdates = [], ...tick } = tickState;
+      const packedIntensityUpdates = packIntensityUpdates(intensityUpdates);
+      postWorkerMessage(
+        { type: 'TICK', payload: { tick, intensityUpdates: packedIntensityUpdates } },
+        packedIntensityUpdates.length > 0 ? [packedIntensityUpdates.buffer] : []
+      );
+    }
   }, TICK_INTERVAL_MS);
 }
 
@@ -128,6 +178,7 @@ self.onmessage = async (event: MessageEvent<WorkerInboundAction>) => {
         const config: SimulationConfig = action.payload;
         simulationEngine.init(config);
         eewEngine.reset();
+        pendingTriggers = [];
         startTickLoop();
         break;
       }
@@ -146,6 +197,7 @@ self.onmessage = async (event: MessageEvent<WorkerInboundAction>) => {
 
       case 'SEEK': {
         if (simulationEngine && eewEngine && eventSequencer && stationBuffer) {
+          pendingTriggers = [];
           const tick = simulationEngine.seek(action.payload.time);
           eewEngine.reset();
           eventSequencer.reset();
@@ -232,6 +284,7 @@ self.onmessage = async (event: MessageEvent<WorkerInboundAction>) => {
 
       case 'RESET': {
         stopTickLoop();
+        pendingTriggers = [];
         if (simulationEngine) {
           if (action.payload) {
             simulationEngine.init(action.payload);

@@ -26,6 +26,7 @@ describe('SimulationEngine State Machine & Wave Propagation', () => {
     expect(states[0]).toBe(StationState.IDLE);
     expect(states[1]).toBe(StationState.IDLE);
     expect(states[2]).toBe(StationState.IDLE);
+    expect(engine.getActiveStationCount()).toBe(0);
   });
 
   it('should advance wave radii and transition station states from IDLE to P_TRIGGERED and S_ARRIVED', () => {
@@ -55,10 +56,12 @@ describe('SimulationEngine State Machine & Wave Propagation', () => {
     expect(tick.newTriggers.length).toBeGreaterThanOrEqual(1);
     expect(tick.newTriggers[0].stationIndex).toBe(0);
     expect(tick.newTriggers[0].state).toBe(StationState.P_TRIGGERED);
+    expect(engine.getActiveStationCount()).toBeGreaterThan(0);
 
     // Tick at t=3.5s: station 0 S-wave arrived!
     tick = engine.update(1.5); // Cumulative simTime = 3.5s
     expect(engine.getStationStates()[0]).toBe(StationState.S_ARRIVED);
+    expect(engine.getActiveStationCount()).toBeGreaterThan(0);
   });
 
   it('should process arrivals at stations even when predicted JMA intensity is 0', () => {
@@ -180,6 +183,7 @@ describe('SimulationEngine State Machine & Wave Propagation', () => {
     const rewindSnapshot = engine.seek(0);
     expect(rewindSnapshot.newTriggers).toHaveLength(0);
     expect(engine.getStationStates().every((state) => state === StationState.IDLE)).toBe(true);
+    expect(engine.getActiveStationCount()).toBe(0);
   });
 
   it('should keep population density out of modeled PGV and EEW trigger estimates', () => {

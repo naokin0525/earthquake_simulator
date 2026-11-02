@@ -14,6 +14,7 @@ import { getJmaIntensityColor, hexToRgba, JMA_INTENSITY_LEVELS } from '../../../
 export interface StationLayerProps {
   id?: string;
   stationBuffer: StationDataBuffer;
+  stationIndices?: number[];
   stationStates: Uint8Array;
   triggerEventsMap?: Map<number, StationTriggerEvent>;
   kyoshinMonitor?: boolean;
@@ -29,6 +30,7 @@ const FALLBACK_INTENSITY_COLOR = JMA_COLOR_MAP[jmaScaleToNumeric('5+')];
 export function createStationsLayer(props: StationLayerProps): ScatterplotLayer {
   const {
     stationBuffer,
+    stationIndices,
     stationStates,
     triggerEventsMap,
     onHover,
@@ -40,10 +42,7 @@ export function createStationsLayer(props: StationLayerProps): ScatterplotLayer 
   } = props;
 
   // Build station data items
-  const data = new Array(stationBuffer.totalStations);
-  for (let i = 0; i < stationBuffer.totalStations; i++) {
-    data[i] = i;
-  }
+  const data = stationIndices ?? Array.from({ length: stationBuffer.totalStations }, (_, index) => index);
 
   return new ScatterplotLayer({
     id,
@@ -120,7 +119,7 @@ export function createStationsLayer(props: StationLayerProps): ScatterplotLayer 
     updateTriggers: {
       getFillColor: [stationStates, triggerEventsMap, kyoshinMonitor, mapVersion, ambientNoiseLevels, intensityDisplayMode],
       getLineColor: [stationStates, kyoshinMonitor],
-      getRadius: [stationStates, kyoshinMonitor, Date.now()],
+      getRadius: [stationStates, kyoshinMonitor],
       getLineWidth: [stationStates]
     }
   });

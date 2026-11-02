@@ -25,10 +25,10 @@ import {
   shouldShowRegionIntensityIcons,
   type AreaFeatureCollection
 } from './layers/SubRegionLayer';
-import { StationLoader } from '../../loaders/StationLoader';
 import { Slab2Model, type SlabDepthArea } from '../../core/physics/slabModel';
 import { getJmaIntensityColor, hexToRgba, LPGM_INTENSITY_LEVELS } from '../../core/ui/intensityColors';
 import { shouldIssueEstimatedIntensityDistribution } from '../../core/physics/attenuation';
+import { computeWavefrontRadiusKm } from '../../core/physics/travelTime';
 
 // Initial map view state focused on Japan
 const INITIAL_VIEW_STATE = {
@@ -51,20 +51,22 @@ export const MapContainer: React.FC = () => {
   const mapContainerRef = useRef<HTMLDivElement>(null);
 
   const [hoverInfo, setHoverInfo] = useState<any>(null);
-  const [stationMetadataMap, setStationMetadataMap] = useState<Map<number, any>>(new Map());
   const [selectedStationIndex, setSelectedStationIndex] = useState<number | null>(null);
   const [slabDepthAreas, setSlabDepthAreas] = useState<SlabDepthArea[]>([]);
+  const [slabDepthAreasLoaded, setSlabDepthAreasLoaded] = useState(false);
   const [subRegions, setSubRegions] = useState<AreaFeatureCollection | null>(null);
   const [isRegionalIntensityZoomedIn, setIsRegionalIntensityZoomedIn] = useState(false);
+  const [displaySimTime, setDisplaySimTime] = useState(0);
+  const displayClockRef = useRef({ simTime: 0, timestamp: performance.now() });
 
   const {
+    isPlaying,
     stationBuffer,
     stationStates,
     triggerEventsMap,
     hypocenter,
-    pRadiusKm,
-    sRadiusKm,
     simTime,
+    timeScale,
     eewReport,
     flashReport,
     earthquakeInfoReport,
@@ -74,11 +76,38 @@ export const MapContainer: React.FC = () => {
     isMeshVisible,
     isFaultVisible,
     isArvVisible,
+    stationMetadata,
     mapVersion,
     hasEpicenter,
     mapDisplayMode,
     setHypocenter
   } = useSimulation();
+  useEffect(() => {
+    displayClockRef.current = { simTime, timestamp: performance.now() };
+    setDisplaySimTime(simTime);
+  }, [simTime]);
+
+  useEffect(() => {
+    if (!isPlaying) return;
+    let frameId = 0;
+    const updateDisplayTime = () => {
+      const { simTime: baseSimTime, timestamp } = displayClockRef.current;
+      setDisplaySimTime(
+        baseSimTime + ((performance.now() - timestamp) / 1000) * timeScale
+      );
+      frameId = requestAnimationFrame(updateDisplayTime);
+    };
+    frameId = requestAnimationFrame(updateDisplayTime);
+    return () => cancelAnimationFrame(frameId);
+  }, [isPlaying, timeScale]);
+  const stationMetadataMap = useMemo(
+    () => new Map(stationMetadata.map((metadata) => [metadata.index, metadata])),
+    [stationMetadata]
+  );
+  const stationIndices = useMemo(
+    () => stationBuffer ? Array.from({ length: stationBuffer.totalStations }, (_, index) => index) : [],
+    [stationBuffer]
+  );
   const hoveredObject = hoverInfo?.object;
   const hoveredStationIndex =
     typeof hoveredObject === 'number' && Number.isInteger(hoveredObject) ? hoveredObject : null;
@@ -116,32 +145,29 @@ export const MapContainer: React.FC = () => {
       interactive: true
     });
 
-    // Load station metadata for hover tooltips
-    StationLoader.loadStations('/data/stations/stations.bin', '/data/stations/stations_meta.json')
-      .then((dataSet) => {
-        const metaMap = new Map<number, any>();
-        for (const meta of dataSet.metadata) {
-          metaMap.set(meta.index, meta);
-        }
-        setStationMetadataMap(metaMap);
-      })
-      .catch(() => { });
-
     return () => {
       map.remove();
     };
   }, [setHypocenter]);
 
   useEffect(() => {
+    if (!isFaultVisible || slabDepthAreasLoaded) return;
+    let cancelled = false;
     Slab2Model.load()
       .then((slabModel) => {
-        setSlabDepthAreas(slabModel.getDepthAreas());
+        if (!cancelled) {
+          setSlabDepthAreas(slabModel.getDepthAreas());
+          setSlabDepthAreasLoaded(true);
+        }
       })
       .catch((error: unknown) => {
+        if (cancelled) return;
         console.error('Failed to load filled slab depth areas', error);
-        setSlabDepthAreas([]);
       });
-  }, []);
+    return () => {
+      cancelled = true;
+    };
+  }, [isFaultVisible, slabDepthAreasLoaded]);
 
   useEffect(() => {
     let cancelled = false;
@@ -176,285 +202,235 @@ export const MapContainer: React.FC = () => {
     return { id: area.id, bounds: area.bounds, image: canvas };
   }), [slabDepthAreas]);
 
-  // 2. Build Deck.gl Layers
-  const deckLayers = useMemo(() => {
-    const layers: any[] = [];
-
-    // Resolve effective display mode
-    let effectiveMode = mapDisplayMode;
-    if (effectiveMode === 'auto') {
-      if (lpgmReport && lpgmReport.affectedPrefectures.length > 0) {
-        effectiveMode = 'lpgm';
-      } else if (earthquakeInfoReport) {
-        effectiveMode = 'estimated';
-      } else if (flashReport) {
-        effectiveMode = 'flash';
-      } else if (eewReport) {
-        effectiveMode = 'eew';
-      } else {
-        effectiveMode = 'off';
-      }
-    }
-
-    // Build lookup maps for fast color resolution
-    const eewMap = new Map<number, any>();
-    if (eewReport) {
-      for (const w of eewReport.warnedPrefectures) {
-        eewMap.set(w.prefCode, w);
-      }
-    }
-
-    const flashRegionMap = getRegionIntensityMap(flashReport);
-    const detailRegionMap = getRegionIntensityMap(earthquakeInfoReport);
-    const estimatedDistributionIssued = shouldIssueEstimatedIntensityDistribution(
-      earthquakeInfoReport?.maxIntensity
-    );
-    const activeRegionIntensityMap = effectiveMode === 'flash'
-      ? flashRegionMap
-      : effectiveMode === 'detail'
-        ? detailRegionMap
-        : new Map();
-
-    const lpgmMap = new Map<number, number>();
-    if (lpgmReport) {
-      for (const p of lpgmReport.affectedPrefectures) {
-        lpgmMap.set(p.prefCode, p.classLevel);
-      }
-    }
-
-    // Layer 0: Japan Landmass with Dynamic Bulletin Coloring
-    layers.push(
-      new GeoJsonLayer({
-        id: 'japan-landmass',
-        data: subRegions ?? [],
-        filled: true,
-        pickable: true,
-        autoHighlight: true,
-        lineJointRounded: true,
-        lineCapRounded: true,
-        highlightColor: [255, 255, 255, 45],
-        getFillColor: (feature: any) => {
-          const prefCode = feature.properties?.pref;
-
-          if (effectiveMode === 'eew') {
-            const w = eewMap.get(prefCode);
-            if (w?.isWarning) {
-              // 警報対象地域: 赤色
-              return [220, 38, 38, 220];
-            } else if (w?.isForecast) {
-              // 予報対象地域: オレンジ色
-              return [234, 153, 57, 180];
-            }
-            return [35, 42, 35, 240];
-          }
-
-          if (effectiveMode === 'flash') {
-            const scale = getReportedRegionIntensity(feature, activeRegionIntensityMap);
-            if (scale) {
-              return getJmaIntensityColor(scale, scale === '0' ? 70 : 85);
-            }
-            return [35, 42, 35, 240];
-          }
-
-          if (effectiveMode === 'detail') {
-            const scale = getReportedRegionIntensity(feature, activeRegionIntensityMap);
-            if (scale) {
-              return getJmaIntensityColor(scale, scale === '0' ? 70 : 85);
-            }
-            return [35, 42, 35, 240];
-          }
-
-          if (effectiveMode === 'lpgm') {
-            const cls = lpgmMap.get(prefCode);
-            if (cls) {
-              return LPGM_FILL_COLORS[cls] ?? [35, 42, 35, 240];
-            }
-            return [35, 42, 35, 240];
-          }
-
-          // Default / off mode
-          return [44, 51, 41, 255];
-        },
-        getLineColor: (feature: any) => {
-          const prefCode = feature.properties?.pref;
-          if (effectiveMode === 'eew') {
-            const w = eewMap.get(prefCode);
-            if (w?.isWarning) return [255, 255, 255, 255];
-            if (w?.isForecast) return [254, 215, 170, 200];
-            return [100, 116, 139, 120];
-          }
-          if (effectiveMode === 'flash') {
-            const scale = getReportedRegionIntensity(feature, activeRegionIntensityMap);
-            if (scale) return [255, 255, 255, 240];
-            return [100, 116, 139, 120];
-          }
-          if (effectiveMode === 'detail') {
-            const scale = getReportedRegionIntensity(feature, activeRegionIntensityMap);
-            if (scale) return [255, 255, 255, 240];
-            return [100, 116, 139, 120];
-          }
-          if (effectiveMode === 'lpgm') {
-            const cls = lpgmMap.get(prefCode);
-            if (cls) return [255, 255, 255, 240];
-            return [100, 116, 139, 120];
-          }
-          return [255, 255, 255, 180];
-        },
-        getLineWidth: (feature: any) => {
-          const prefCode = feature.properties?.pref;
-          if (effectiveMode === 'eew') {
-            const w = eewMap.get(prefCode);
-            if (w?.isWarning) return 2.5;
-            if (w?.isForecast) return 1.8;
-          } else if (
-            effectiveMode === 'flash' &&
-            getReportedRegionIntensity(feature, activeRegionIntensityMap)
-          ) {
-            return 2.0;
-          } else if (
-            effectiveMode === 'detail' &&
-            getReportedRegionIntensity(feature, activeRegionIntensityMap)
-          ) {
-            return 1.8;
-          } else if (effectiveMode === 'lpgm' && lpgmMap.has(prefCode)) {
-            return 2.0;
-          }
-          return 1.2;
-        },
-        lineWidthUnits: 'pixels',
-        lineWidthMinPixels: 1.0,
-        updateTriggers: {
-          getFillColor: [
-            effectiveMode,
-            eewReport?.reportNumber,
-            eewReport?.isWarning,
-            flashReport?.issuedTime,
-            earthquakeInfoReport?.issuedTime,
-            lpgmReport?.issuedTime
-          ],
-          getLineColor: [
-            effectiveMode,
-            eewReport?.reportNumber,
-            eewReport?.isWarning,
-            flashReport?.issuedTime,
-            earthquakeInfoReport?.issuedTime,
-            lpgmReport?.issuedTime
-          ],
-          getLineWidth: [
-            effectiveMode,
-            eewReport?.reportNumber,
-            eewReport?.isWarning,
-            flashReport?.issuedTime,
-            earthquakeInfoReport?.issuedTime,
-            lpgmReport?.issuedTime
-          ]
-        }
-      })
-    );
-
-    if (isFaultVisible) {
-      for (const area of slabAreaCanvases) {
-        layers.push(new BitmapLayer({
+  const faultLayers = useMemo(
+    () => isFaultVisible
+      ? slabAreaCanvases.map((area) => new BitmapLayer({
           id: `slab-depth-area-${area.id}`,
           image: area.image,
           bounds: area.bounds,
           opacity: 0.8,
           pickable: false
-        }));
+        }))
+      : [],
+    [isFaultVisible, slabAreaCanvases]
+  );
+  const amplificationLayers = useMemo(
+    () => isArvVisible ? [createGroundAmplificationLayer()] : [],
+    [isArvVisible]
+  );
+  const waveLayers = useMemo(() => createWaveFrontLayers({
+    trueHypocenter: hypocenter,
+    currentTime: hypocenter.originTime + displaySimTime,
+    pRadiusKm: computeWavefrontRadiusKm(displaySimTime, hypocenter.depth, 'P'),
+    sRadiusKm: computeWavefrontRadiusKm(displaySimTime, hypocenter.depth, 'S'),
+    eewReport
+  }), [hypocenter, displaySimTime, eewReport]);
+  const stationLayer = useMemo(() => stationBuffer
+    ? createStationsLayer({
+        stationBuffer,
+        stationIndices,
+        stationStates,
+        triggerEventsMap,
+        ambientNoiseLevels,
+        kyoshinMonitor: isKyoshinMonitor,
+        mapVersion,
+        intensityDisplayMode: mapDisplayMode === 'auto' || mapDisplayMode === 'eew'
+          ? 'current'
+          : 'maximum'
+      })
+    : null, [
+      stationBuffer,
+      stationIndices,
+      stationStates,
+      triggerEventsMap,
+      ambientNoiseLevels,
+      isKyoshinMonitor,
+      mapVersion,
+      mapDisplayMode
+    ]);
+
+  const effectiveMode = useMemo(() => {
+    if (mapDisplayMode !== 'auto') return mapDisplayMode;
+    if (lpgmReport && lpgmReport.affectedPrefectures.length > 0) return 'lpgm';
+    if (earthquakeInfoReport) return 'estimated';
+    if (flashReport) return 'flash';
+    if (eewReport) return 'eew';
+    return 'off';
+  }, [mapDisplayMode, lpgmReport, earthquakeInfoReport, flashReport, eewReport]);
+  const estimatedDistributionIssued = shouldIssueEstimatedIntensityDistribution(
+    earthquakeInfoReport?.maxIntensity
+  );
+  const landmassLayer = useMemo(() => {
+    const eewMap = new Map<number, any>();
+    if (eewReport) {
+      for (const warning of eewReport.warnedPrefectures) {
+        eewMap.set(warning.prefCode, warning);
       }
     }
 
-    if (isArvVisible) {
-      layers.push(createGroundAmplificationLayer());
+    const flashRegionMap = getRegionIntensityMap(flashReport);
+    const detailRegionMap = getRegionIntensityMap(earthquakeInfoReport);
+    const activeRegionIntensityMap = effectiveMode === 'flash'
+      ? flashRegionMap
+      : effectiveMode === 'detail'
+        ? detailRegionMap
+        : new Map();
+    const lpgmMap = new Map<number, number>();
+    if (lpgmReport) {
+      for (const prefecture of lpgmReport.affectedPrefectures) {
+        lpgmMap.set(prefecture.prefCode, prefecture.classLevel);
+      }
     }
 
-    // Layer 1: Custom WebGL 250m Mesh Intensity Shader Layer (if toggled)
+    return new GeoJsonLayer({
+      id: 'japan-landmass',
+      data: subRegions ?? [],
+      filled: true,
+      pickable: true,
+      autoHighlight: true,
+      lineJointRounded: true,
+      lineCapRounded: true,
+      highlightColor: [255, 255, 255, 45],
+      getFillColor: (feature: any) => {
+        const prefCode = feature.properties?.pref;
+
+        if (effectiveMode === 'eew') {
+          const warning = eewMap.get(prefCode);
+          if (warning?.isWarning) return [220, 38, 38, 220];
+          if (warning?.isForecast) return [234, 153, 57, 180];
+          return [35, 42, 35, 240];
+        }
+
+        if (effectiveMode === 'flash' || effectiveMode === 'detail') {
+          const scale = getReportedRegionIntensity(feature, activeRegionIntensityMap);
+          return scale
+            ? getJmaIntensityColor(scale, scale === '0' ? 70 : 85)
+            : [35, 42, 35, 240];
+        }
+
+        if (effectiveMode === 'lpgm') {
+          const classLevel = lpgmMap.get(prefCode);
+          return classLevel
+            ? LPGM_FILL_COLORS[classLevel] ?? [35, 42, 35, 240]
+            : [35, 42, 35, 240];
+        }
+        return [44, 51, 41, 255];
+      },
+      getLineColor: (feature: any) => {
+        const prefCode = feature.properties?.pref;
+        if (effectiveMode === 'eew') {
+          const warning = eewMap.get(prefCode);
+          if (warning?.isWarning) return [255, 255, 255, 255];
+          if (warning?.isForecast) return [254, 215, 170, 200];
+          return [100, 116, 139, 120];
+        }
+        if (effectiveMode === 'flash' || effectiveMode === 'detail') {
+          return getReportedRegionIntensity(feature, activeRegionIntensityMap)
+            ? [255, 255, 255, 240]
+            : [100, 116, 139, 120];
+        }
+        if (effectiveMode === 'lpgm') {
+          return lpgmMap.has(prefCode)
+            ? [255, 255, 255, 240]
+            : [100, 116, 139, 120];
+        }
+        return [255, 255, 255, 180];
+      },
+      getLineWidth: (feature: any) => {
+        const prefCode = feature.properties?.pref;
+        if (effectiveMode === 'eew') {
+          const warning = eewMap.get(prefCode);
+          if (warning?.isWarning) return 2.5;
+          if (warning?.isForecast) return 1.8;
+        } else if (
+          (effectiveMode === 'flash' || effectiveMode === 'detail') &&
+          getReportedRegionIntensity(feature, activeRegionIntensityMap)
+        ) {
+          return effectiveMode === 'flash' ? 2 : 1.8;
+        } else if (effectiveMode === 'lpgm' && lpgmMap.has(prefCode)) {
+          return 2;
+        }
+        return 1.2;
+      },
+      lineWidthUnits: 'pixels',
+      lineWidthMinPixels: 1.0,
+      updateTriggers: {
+        getFillColor: [
+          effectiveMode,
+          eewReport?.reportNumber,
+          eewReport?.isWarning,
+          flashReport?.issuedTime,
+          earthquakeInfoReport?.issuedTime,
+          lpgmReport?.issuedTime
+        ],
+        getLineColor: [
+          effectiveMode,
+          eewReport?.reportNumber,
+          eewReport?.isWarning,
+          flashReport?.issuedTime,
+          earthquakeInfoReport?.issuedTime,
+          lpgmReport?.issuedTime
+        ],
+        getLineWidth: [
+          effectiveMode,
+          eewReport?.reportNumber,
+          eewReport?.isWarning,
+          flashReport?.issuedTime,
+          earthquakeInfoReport?.issuedTime,
+          lpgmReport?.issuedTime
+        ]
+      }
+    });
+  }, [subRegions, effectiveMode, eewReport, flashReport, earthquakeInfoReport, lpgmReport]);
+
+  const meshLayer = useMemo(() => {
     const shouldRenderMesh = effectiveMode === 'estimated'
       ? estimatedDistributionIssued
       : isMeshVisible;
-    if (shouldRenderMesh) {
-      layers.push(
-        createMeshIntensityLayer({
-          hypoLat: hypocenter.lat,
-          hypoLon: hypocenter.lon,
-          depthKm: hypocenter.depth,
-          magnitude: hypocenter.magnitude,
-          visible: true
-        })
-      );
-    }
-
-    // Layer 2: Dual Wave Fronts (Ground Truth & EEW Estimated)
-    const waveLayers = createWaveFrontLayers({
-      trueHypocenter: hypocenter,
-      currentTime: hypocenter.originTime + simTime,
-      pRadiusKm,
-      sRadiusKm,
-      eewReport
+    if (!shouldRenderMesh) return null;
+    return createMeshIntensityLayer({
+      hypoLat: hypocenter.lat,
+      hypoLon: hypocenter.lon,
+      depthKm: hypocenter.depth,
+      magnitude: hypocenter.magnitude,
+      visible: true
     });
-    layers.push(...waveLayers);
+  }, [effectiveMode, estimatedDistributionIssued, isMeshVisible, hypocenter]);
+  const hypocenterLayers = useMemo(
+    () => createHypocenterLayers({ hasEpicenter, trueHypocenter: hypocenter, eewReport }),
+    [hasEpicenter, hypocenter, eewReport]
+  );
+  const regionalReport = mapDisplayMode === 'flash'
+    ? flashReport
+    : mapDisplayMode === 'detail'
+      ? earthquakeInfoReport
+      : null;
+  const regionalIntensityLayers = useMemo(
+    () => shouldShowRegionIntensityIcons(mapDisplayMode, isRegionalIntensityZoomedIn)
+      ? createRegionIntensityLayers(subRegions, regionalReport)
+      : [],
+    [mapDisplayMode, isRegionalIntensityZoomedIn, subRegions, regionalReport]
+  );
 
-    // Layer 3: Seismograph Stations (1,749 stations)
-    if (stationBuffer) {
-      layers.push(
-        createStationsLayer({
-          stationBuffer,
-          stationStates,
-          triggerEventsMap,
-          ambientNoiseLevels,
-          kyoshinMonitor: isKyoshinMonitor,
-          mapVersion,
-          intensityDisplayMode: mapDisplayMode === 'auto' || mapDisplayMode === 'eew'
-            ? 'current'
-            : 'maximum'
-        })
-      );
-    }
-
-    // Layer 4: Hypocenters (True & EEW Estimated)
-    const hypoLayers = createHypocenterLayers({
-      hasEpicenter,
-      trueHypocenter: hypocenter,
-      eewReport
-    });
-    layers.push(...hypoLayers);
-    const regionalReport = mapDisplayMode === 'flash'
-      ? flashReport
-      : mapDisplayMode === 'detail'
-        ? earthquakeInfoReport
-        : null;
-    const showRegionalIntensityIcons = shouldShowRegionIntensityIcons(
-      mapDisplayMode,
-      isRegionalIntensityZoomedIn
-    );
-    if (showRegionalIntensityIcons) {
-      layers.push(...createRegionIntensityLayers(subRegions, regionalReport));
-    }
-
-    return layers;
-  }, [
-    stationBuffer,
-    subRegions,
-    stationStates,
-    triggerEventsMap,
-    hypocenter,
-    pRadiusKm,
-    sRadiusKm,
-    simTime,
-    eewReport,
-    flashReport,
-    earthquakeInfoReport,
-    lpgmReport,
-    mapDisplayMode,
-    isKyoshinMonitor,
-    ambientNoiseLevels,
-    isMeshVisible,
-    isFaultVisible,
-    isArvVisible,
-    mapVersion,
-    hasEpicenter,
-    slabAreaCanvases,
-    isRegionalIntensityZoomedIn
+  // 2. Compose independently memoized Deck.gl layer groups.
+  const deckLayers = useMemo(() => [
+    landmassLayer,
+    ...faultLayers,
+    ...amplificationLayers,
+    ...(meshLayer ? [meshLayer] : []),
+    ...waveLayers,
+    ...(stationLayer ? [stationLayer] : []),
+    ...hypocenterLayers,
+    ...regionalIntensityLayers
+  ], [
+    landmassLayer,
+    faultLayers,
+    amplificationLayers,
+    meshLayer,
+    waveLayers,
+    stationLayer,
+    hypocenterLayers,
+    regionalIntensityLayers
   ]);
 
   return (
