@@ -215,8 +215,8 @@ export class WaveFrontLayer extends CompositeLayer<WaveFrontLayerProps> {
       });
     }
 
-    // 3. EEW Estimated Wave Front Rings
-    if (eewReport?.estimatedHypocenter) {
+    // 3. EEW Estimated Wave Front Rings (only after true wavefront appears)
+    if (eewReport?.estimatedHypocenter && truePRadius > 0.1) {
       const estHypo = eewReport.estimatedHypocenter;
       let estElapsedTime = 0;
 
