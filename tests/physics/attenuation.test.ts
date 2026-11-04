@@ -17,7 +17,7 @@ import {
 } from '../../src/core/physics/attenuation';
 import { Slab2Model, SlabGridRaster } from '../../src/core/physics/slabModel';
 
-function createSlabModel(withSlab: boolean): Slab2Model {
+function createSlabModel(withSlab: boolean, slabTopDepthKm = 50): Slab2Model {
   const metadata = {
     id: 'test',
     label: 'test',
@@ -40,7 +40,7 @@ function createSlabModel(withSlab: boolean): Slab2Model {
   const thicknessPixels = new Uint8ClampedArray(3 * 3 * 4);
   if (withSlab) {
     for (let i = 0; i < depthPixels.length; i += 4) {
-      depthPixels[i + 1] = 51;
+      depthPixels[i + 1] = slabTopDepthKm + 1;
       thicknessPixels[i + 1] = 101;
     }
   }
@@ -64,10 +64,10 @@ describe('Si & Midorikawa (1999) PGV & JMA Intensity Engine', () => {
     expect(bedrockPgv).toBeLessThan(300.0);
   });
 
-  it('uses the soft-saturating depth source term', () => {
-    const atCriticalDepth = calculateBedrockPgv(100, 80, 4.9);
-    const beyondCriticalDepth = calculateBedrockPgv(100, 160, 4.9);
-    expect(beyondCriticalDepth / atCriticalDepth).toBeCloseTo(10 ** (0.0038 * 80 * Math.log(2)), 10);
+  it('caps the depth source term at 100 km (+0.38)', () => {
+    const atCapDepth = calculateBedrockPgv(100, 100, 4.9);
+    const beyondCapDepth = calculateBedrockPgv(100, 300, 4.9);
+    expect(beyondCapDepth).toBeCloseTo(atCapDepth, 10);
   });
 
   it('applies finite-rupture distance to large shallow earthquakes without changing the epicenter depth', () => {
@@ -104,10 +104,23 @@ describe('Si & Midorikawa (1999) PGV & JMA Intensity Engine', () => {
     const distance = 100;
     const depth = 100;
     const magnitude = 7;
-    const sourceTerm = 0.0038 * 80 + 0.0038 * 80 * Math.log(1 + (depth - 80) / 80);
+    const sourceTerm = 0.0038 * Math.min(depth, 100);
+    const spreadingFactor = 1.0;
     const expected = 10 ** (
       0.58 * magnitude + sourceTerm + 0.12 - 1.29 -
-      Math.log10(distance + 0.0028 * 10 ** (0.5 * magnitude)) -
+      spreadingFactor * Math.log10(distance + 0.0028 * 10 ** (0.5 * magnitude)) -
+      0.002 * distance
+    );
+    expect(calculateBedrockPgv(distance, depth, magnitude)).toBeCloseTo(expected, 12);
+  });
+
+  it('maintains spherical geometric spreading (spreadingFactor = 1.0) and caps depth term for deep-focus earthquakes', () => {
+    const distance = 100;
+    const depth = 200;
+    const magnitude = 4.9;
+    const expected = 10 ** (
+      0.58 * magnitude + 0.0038 * 100 + 0.12 - 1.29 -
+      1.0 * Math.log10(distance + 0.0028 * 10 ** (0.5 * magnitude)) -
       0.002 * distance
     );
     expect(calculateBedrockPgv(distance, depth, magnitude)).toBeCloseTo(expected, 12);
@@ -119,13 +132,49 @@ describe('Si & Midorikawa (1999) PGV & JMA Intensity Engine', () => {
     expect(path.lSlabKm).toBeGreaterThan(0);
     expect(path.lWedgeKm).toBeGreaterThan(0);
     expect(path.totalInelasticLoss).toBeCloseTo(
-      path.lCrustKm * 0.002 + path.lWedgeKm * 0.0055 + path.lSlabKm * 0.0004,
+      path.lCrustKm * 0.002 + path.lWedgeKm * 0.002 + path.lSlabKm * 0.0004,
       10
     );
 
     const wedgePath = integrateDirectRayPath(0, 0.05, 100, 0, 0.05, undefined, 5);
     expect(wedgePath.lWedgeKm).toBeGreaterThan(0);
     expect(wedgePath.totalInelasticLoss).toBeGreaterThan(path.totalInelasticLoss);
+  });
+
+  it('increases mantle-wedge attenuation with the local slab depth', () => {
+    const shallowSlabPath = integrateDirectRayPath(0, 0.05, 40, 0, 0.05, createSlabModel(true, 50), 5);
+    const deepSlabPath = integrateDirectRayPath(0, 0.05, 40, 0, 0.05, createSlabModel(true, 120), 5);
+    expect(shallowSlabPath.lWedgeKm).toBe(deepSlabPath.lWedgeKm);
+    expect(deepSlabPath.totalInelasticLoss - shallowSlabPath.totalInelasticLoss).toBeCloseTo(
+      shallowSlabPath.lWedgeKm * (0.008 - 0.002),
+      10
+    );
+  });
+
+  it('uses depth-dependent mantle attenuation when Slab2 has no deep coverage', () => {
+    const path = integrateDirectRayPath(0, 0.05, 682, 0, 0.05, undefined, 1);
+    expect(path.lCrustKm).toBeCloseTo(30, 10);
+    expect(path.lWedgeKm).toBeCloseTo(652, 10);
+    expect(path.totalInelasticLoss).toBeCloseTo(
+      30 * 0.002 + 130 * 0.0055 + 250 * 0.001 + 272 * 0.0004,
+      10
+    );
+  });
+
+  it('uses the deep intraslab direct-path fallback when Slab2 is unavailable', () => {
+    const deepPathPgv = calculateBedrockPgv(
+      682, 682, 7.9, 0, 0.05, 0, 0.05, undefined, 'intraplate'
+    );
+    const homogeneousPgv = calculateBedrockPgv(682, 682, 7.9, undefined, undefined, undefined, undefined, undefined, 'intraplate');
+    const homogeneousCrustalPgv = calculateBedrockPgv(
+      682, 682, 7.9, undefined, undefined, undefined, undefined, undefined, 'crustal'
+    );
+    const explicitlyCrustalPgv = calculateBedrockPgv(
+      682, 682, 7.9, 0, 0.05, 0, 0.05, undefined, 'crustal'
+    );
+
+    expect(deepPathPgv).toBeGreaterThan(homogeneousPgv);
+    expect(explicitlyCrustalPgv).toBeCloseTo(homogeneousCrustalPgv, 10);
   });
 
   it('uses a slab-guided path only when Slab2 data exists beneath the station', () => {
@@ -137,7 +186,7 @@ describe('Si & Midorikawa (1999) PGV & JMA Intensity Engine', () => {
 
     const shallowPgv = calculateBedrockPgv(100, 50, 7, 0, 0.05, 0, 0.05, withSlab);
     const shallowWithoutSlabPgv = calculateBedrockPgv(100, 50, 7, 0, 0.05, 0, 0.05, withoutSlab);
-    expect(shallowPgv).toBeCloseTo(shallowWithoutSlabPgv, 10);
+    expect(shallowPgv).toBeGreaterThan(shallowWithoutSlabPgv);
   });
 
   it('should scale surface PGV proportionally with site amplification factor ARV', () => {

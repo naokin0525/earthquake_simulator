@@ -46,11 +46,50 @@ export {
 
 const BASE_K_ATTENUATION = 0.002; // Standard inelastic attenuation coefficient (km^-1)
 const WEDGE_K_ATTENUATION = 0.0055;
+const SHALLOW_WEDGE_K_ATTENUATION = 0.002;
+const DEEP_WEDGE_K_ATTENUATION = 0.008;
 const SLAB_K_ATTENUATION = 0.0004;
 const CRUST_DEPTH_KM = 30.0;
 const GUIDED_PATH_MIN_DEPTH_KM = 60.0;
 const DEFAULT_PATH_STEP_KM = 5.0;
-const DEPTH_TERM_CRITICAL_KM = 80.0;
+const ASTHENOSPHERE_MAX_DEPTH_KM = 160.0;
+const TRANSITION_ZONE_MIN_DEPTH_KM = 410.0;
+const MID_MANTLE_K_ATTENUATION = 0.001;
+const DEEP_MANTLE_K_ATTENUATION = 0.0004;
+const DEEP_INTRASLAB_FALLBACK_MIN_DEPTH_KM = 200.0;
+const DEPTH_TERM_MAX_DEPTH_KM = 100.0;
+const GEOMETRIC_SPREADING_FACTOR = 1.0;
+const WEDGE_ATTENUATION_SHALLOW_SLAB_DEPTH_KM = 70.0;
+const WEDGE_ATTENUATION_DEEP_SLAB_DEPTH_KM = 100.0;
+
+function getGeometricSpreadingFactor(_depthKm?: number): number {
+  return GEOMETRIC_SPREADING_FACTOR;
+}
+
+function getWedgeAttenuation(slabTopDepthKm: number | null): number {
+  if (slabTopDepthKm === null || !Number.isFinite(slabTopDepthKm)) {
+    return WEDGE_K_ATTENUATION;
+  }
+
+  const transition =
+    (slabTopDepthKm - WEDGE_ATTENUATION_SHALLOW_SLAB_DEPTH_KM) /
+    (WEDGE_ATTENUATION_DEEP_SLAB_DEPTH_KM - WEDGE_ATTENUATION_SHALLOW_SLAB_DEPTH_KM);
+  const fraction = Math.max(0, Math.min(1, transition));
+  return (
+    SHALLOW_WEDGE_K_ATTENUATION +
+    fraction * (DEEP_WEDGE_K_ATTENUATION - SHALLOW_WEDGE_K_ATTENUATION)
+  );
+}
+
+function getMantleAttenuation(depthKm: number, slabTopDepthKm: number | null): number {
+  if (depthKm <= ASTHENOSPHERE_MAX_DEPTH_KM) {
+    return getWedgeAttenuation(slabTopDepthKm);
+  }
+  if (depthKm <= TRANSITION_ZONE_MIN_DEPTH_KM) {
+    return MID_MANTLE_K_ATTENUATION;
+  }
+  return DEEP_MANTLE_K_ATTENUATION;
+}
 
 export type FaultType = 'crustal' | 'interplate' | 'intraplate';
 
@@ -99,6 +138,7 @@ export function integrateDirectRayPath(
   let lCrustKm = 0;
   let lWedgeKm = 0;
   let lSlabKm = 0;
+  let mantleInelasticLoss = 0;
 
   for (let sample = 0; sample < sampleCount; sample++) {
     const fraction = (sample + 0.5) / sampleCount;
@@ -112,6 +152,10 @@ export function integrateDirectRayPath(
       lSlabKm += segmentLengthKm;
     } else {
       lWedgeKm += segmentLengthKm;
+      mantleInelasticLoss += segmentLengthKm * getMantleAttenuation(
+        depthKm,
+        slabModel?.getTopDepthKm(lat, lon) ?? null
+      );
     }
   }
 
@@ -121,7 +165,7 @@ export function integrateDirectRayPath(
     lSlabKm,
     totalInelasticLoss:
       lCrustKm * BASE_K_ATTENUATION +
-      lWedgeKm * WEDGE_K_ATTENUATION +
+      mantleInelasticLoss +
       lSlabKm * SLAB_K_ATTENUATION
   };
 }
@@ -155,24 +199,23 @@ export function calculateBedrockPgv(
     resolvedFaultType === 'intraplate' ? 0.12 :
     resolvedFaultType === 'interplate' ? -0.02 :
     0.0;
-  const sourceDepthTerm = clampedDepth <= DEPTH_TERM_CRITICAL_KM
-    ? 0.0038 * clampedDepth
-    : 0.0038 * DEPTH_TERM_CRITICAL_KM +
-      0.0038 * DEPTH_TERM_CRITICAL_KM *
-      Math.log(1 + (clampedDepth - DEPTH_TERM_CRITICAL_KM) / DEPTH_TERM_CRITICAL_KM);
+  const sourceDepthTerm = 0.0038 * Math.min(clampedDepth, DEPTH_TERM_MAX_DEPTH_KM);
   const saturationTerm = 0.0028 * Math.pow(10.0, 0.50 * safeMw);
+  const spreadingFactor = getGeometricSpreadingFactor(clampedDepth);
 
   let directTerm =
-    -Math.log10(effectiveDistance + saturationTerm) -
+    -spreadingFactor * Math.log10(effectiveDistance + saturationTerm) -
     BASE_K_ATTENUATION * effectiveDistance;
   let guidedTerm = Number.NEGATIVE_INFINITY;
-  if (
+  const hasCoordinates =
     hypoLat !== undefined &&
     hypoLon !== undefined &&
     stationLat !== undefined &&
-    stationLon !== undefined &&
-    slabModel
-  ) {
+    stationLon !== undefined;
+  const useDeepIntraslabFallback =
+    clampedDepth >= DEEP_INTRASLAB_FALLBACK_MIN_DEPTH_KM &&
+    resolvedFaultType === 'intraplate';
+  if (hasCoordinates && (slabModel || useDeepIntraslabFallback)) {
     const directPath = integrateDirectRayPath(
       hypoLat,
       hypoLon,
@@ -185,10 +228,10 @@ export function calculateBedrockPgv(
       ? effectiveDistance / clampedDistance
       : 0;
     directTerm =
-      -Math.log10(effectiveDistance + saturationTerm) -
+      -spreadingFactor * Math.log10(effectiveDistance + saturationTerm) -
       directPath.totalInelasticLoss * directLossScale;
 
-    if (clampedDepth >= GUIDED_PATH_MIN_DEPTH_KM) {
+    if (slabModel && clampedDepth >= GUIDED_PATH_MIN_DEPTH_KM) {
       const slabTopDepthKm = slabModel.getTopDepthKm(stationLat, stationLon);
       if (
         slabTopDepthKm !== null &&
@@ -217,16 +260,14 @@ export function calculateBedrockPgv(
           guidedSlabLengthKm * SLAB_K_ATTENUATION +
           slabTopDepthKm * BASE_K_ATTENUATION;
         guidedTerm =
-          -Math.log10(effectiveGuidedDistance + saturationTerm) -
+          -spreadingFactor * Math.log10(effectiveGuidedDistance + saturationTerm) -
           guidedLoss * guidedLossScale;
       }
     }
   }
 
   const pathTerm = Number.isFinite(guidedTerm)
-    ? 0.5 * Math.log10(
-        Math.pow(10, 2 * directTerm) + Math.pow(10, 2 * guidedTerm)
-      )
+    ? Math.max(directTerm, guidedTerm)
     : directTerm;
   const log10Pgv600 =
     0.58 * safeMw +

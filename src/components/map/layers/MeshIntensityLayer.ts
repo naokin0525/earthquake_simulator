@@ -69,9 +69,7 @@ float R = max(length(vec2(effectiveEpicentralDistanceKm, meshIntensity.depthKm))
 
 float arv = 0.5 + (color.r * 2.5);
 float saturationTerm = 0.0028 * pow(10.0, 0.50 * meshIntensity.magnitude);
-float depthTerm = meshIntensity.depthKm <= 80.0
-  ? 0.0038 * meshIntensity.depthKm
-  : 0.304 + 0.304 * log(1.0 + (meshIntensity.depthKm - 80.0) / 80.0);
+float depthTerm = 0.0038 * min(meshIntensity.depthKm, 100.0);
 float log10Pgv600 = 0.58 * meshIntensity.magnitude + depthTerm + meshIntensity.faultTypeOffset - 1.29
   - log2(R + saturationTerm) * 0.30103 - 0.002 * R;
 float bedrockPgv = pow(10.0, log10Pgv600);
